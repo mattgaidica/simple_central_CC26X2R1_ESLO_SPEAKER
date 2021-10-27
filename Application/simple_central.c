@@ -56,6 +56,7 @@
 #include <ti/sysbios/knl/Queue.h>
 
 #include <ti/display/Display.h>
+#include <ti/drivers/GPIO.h>
 
 #include "bcomdef.h"
 
@@ -95,6 +96,7 @@
 #define SC_EVT_PASSCODE_NEEDED     0x08
 #define SC_EVT_READ_RPA            0x09
 #define SC_EVT_INSUFFICIENT_MEM    0x0A
+#define	ES_NOTIF_TIMEOUT		   0x0B
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -252,6 +254,8 @@ typedef struct {
 	uint16_t connHandle;        // member's connection handle
 	uint8_t status;            // bitwise status flag
 } groupListElem_t;
+
+static Clock_Struct notifTimeout;
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -649,6 +653,9 @@ static void SimpleCentral_init(void) {
 // Initialize Two-button Menu
 	tbm_initTwoBtnMenu(dispHandle, &scMenuMain, 5, SimpleCentral_menuSwitchCb);
 	Display_printf(dispHandle, SC_ROW_SEPARATOR, 0, "====================");
+
+	Util_constructClock(&notifTimeout, SimpleCentral_clockHandler, 50, 0,
+	false, ES_NOTIF_TIMEOUT);
 }
 
 /*********************************************************************
@@ -1500,6 +1507,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_NOTI) {
 			// Matt
+			GPIO_write(LED_0, 0x01);
+			Util_startClock(&notifTimeout);
 			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
 					"Notification: 0x%02x",
 					pMsg->msg.handleValueNoti.pValue[0]);
@@ -2137,6 +2146,10 @@ void SimpleCentral_clockHandler(UArg arg) {
 		Util_startClock(&clkRpaRead);
 		// Let the application handle the event
 		SimpleCentral_enqueueMsg(SC_EVT_READ_RPA, 0, NULL);
+		break;
+
+	case ES_NOTIF_TIMEOUT:
+		GPIO_write(LED_0, 0x00);
 		break;
 
 	default:

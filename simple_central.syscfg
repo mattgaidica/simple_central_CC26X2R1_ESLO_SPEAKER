@@ -24,6 +24,8 @@ const ECDH1       = ECDH.addInstance();
 const GPIO        = scripting.addModule("/ti/drivers/GPIO");
 const GPIO1       = GPIO.addInstance();
 const GPIO2       = GPIO.addInstance();
+const GPIO3       = GPIO.addInstance();
+const GPIO4       = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
@@ -76,6 +78,14 @@ GPIO2.mode              = "Dynamic";
 GPIO2.$name             = "CONFIG_GPIO_BTN2";
 GPIO2.pinInstance.$name = "CONFIG_PIN_BTN2";
 
+GPIO3.$hardware         = system.deviceData.board.components.LED_RED;
+GPIO3.$name             = "LED_0";
+GPIO3.pinInstance.$name = "CONFIG_PIN_0";
+
+GPIO4.$hardware         = system.deviceData.board.components.LED_GREEN;
+GPIO4.$name             = "LED_1";
+GPIO4.pinInstance.$name = "CONFIG_PIN_1";
+
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
 NVS1.internalFlash.regionBase = 0x48000;
@@ -93,3 +103,5 @@ Display1.uart.uart.txPin.$suggestSolution = "boosterpack.4";
 Display1.uart.uart.rxPin.$suggestSolution = "boosterpack.3";
 GPIO1.gpioPin.$suggestSolution            = "boosterpack.13";
 GPIO2.gpioPin.$suggestSolution            = "boosterpack.12";
+GPIO3.gpioPin.$suggestSolution            = "boosterpack.39";
+GPIO4.gpioPin.$suggestSolution            = "boosterpack.40";
