@@ -48,7 +48,15 @@
 /*********************************************************************
  * INCLUDES
  */
+#include <stdint.h>
+#include <unistd.h>
+
 #include <string.h>
+#include <math.h> // atan2(x,y), M_PI
+
+//// CMSIS Math
+//#include "arm_math.h"
+//#include "arm_const_structs.h"
 
 #include <ti/sysbios/knl/Task.h>
 #include <ti/sysbios/knl/Clock.h>
@@ -338,7 +346,7 @@ CONST uint8_t SimpleStreamServerUUID[ATT_BT_UUID_SIZE] = { LO_UINT16(
 
 // DataIn UUID
 CONST uint8_t SimpleStreamServer_DataInUUID[ATT_BT_UUID_SIZE] = { LO_UINT16(
-		SIMPLEPROFILE_CHAR5_UUID), HI_UINT16(SIMPLEPROFILE_CHAR5_UUID) };
+		SIMPLEPROFILE_CHAR7_UUID), HI_UINT16(SIMPLEPROFILE_CHAR7_UUID) };
 
 simpleService_t streamServiceHandle = {
 		// Set Simple Stream Server service UUID
@@ -1506,12 +1514,24 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_NOTI) {
-			// Matt
-			GPIO_write(LED_0, 0x01);
-			Util_startClock(&notifTimeout);
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
-					"Notification: 0x%02x",
-					pMsg->msg.handleValueNoti.pValue[0]);
+			// Matt: tricks to remove the need for floats here
+			int32_t BLElatency = 7;
+			int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
+			memcpy(&dominantFreq, pMsg->msg.handleValueNoti.pValue,
+					sizeof(int32_t));
+			memcpy(&phaseAngle, pMsg->msg.handleValueNoti.pValue + 4,
+					sizeof(int32_t));
+
+			int32_t targetPhaseAngle = 0 * 1000;
+			int32_t correctedPhaseAngle = targetPhaseAngle - phaseAngle;
+			int32_t msToStim = (1000 * correctedPhaseAngle) / (360 * dominantFreq) - BLElatency;
+			if (msToStim < 0) {
+				msToStim += 1000000 / dominantFreq;
+			}
+			Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
+			GPIO_write(LED_0, 0x01); // STIMULATE
+			Util_startClock(&notifTimeout); // turn off here
+//			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "SWA Detected");
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
 			// ATT request-response or indication-confirmation flow control is
 			// violated. All subsequent ATT requests or indications will be dropped.
