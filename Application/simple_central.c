@@ -1514,8 +1514,9 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_NOTI) {
+			GPIO_write(LED_1, 0x01); // compute start
 			// Matt: tricks to remove the need for floats here
-			int32_t BLElatency = 7;
+			int32_t BLElatency = 0; // ms
 			int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 			memcpy(&dominantFreq, pMsg->msg.handleValueNoti.pValue,
 					sizeof(int32_t));
@@ -1523,13 +1524,18 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					sizeof(int32_t));
 
 			int32_t targetPhaseAngle = 0 * 1000;
-			int32_t correctedPhaseAngle = targetPhaseAngle - phaseAngle;
-			int32_t msToStim = (1000 * correctedPhaseAngle) / (360 * dominantFreq) - BLElatency;
-			if (msToStim < 0) {
-				msToStim += 1000000 / dominantFreq;
+			int32_t remainingPhase = phaseAngle + targetPhaseAngle;
+			if (remainingPhase < 0) {
+				remainingPhase = -remainingPhase;
+			} else {
+				remainingPhase = (360*1000) - remainingPhase;
 			}
+			int32_t msToStim = (1000 * remainingPhase / (360 * dominantFreq));
+			// !! handle BLE latency
 			Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
+			GPIO_write(LED_1, 0x00); // compute end
 			GPIO_write(LED_0, 0x01); // STIMULATE
+			GPIO_write(PINK_NOISE, 0x01); // STIMULATE
 			Util_startClock(&notifTimeout); // turn off here
 //			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "SWA Detected");
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
@@ -2170,6 +2176,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	case ES_NOTIF_TIMEOUT:
 		GPIO_write(LED_0, 0x00);
+		GPIO_write(PINK_NOISE, 0x00);
 		break;
 
 	default:

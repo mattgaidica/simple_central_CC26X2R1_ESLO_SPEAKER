@@ -26,6 +26,7 @@ const GPIO1       = GPIO.addInstance();
 const GPIO2       = GPIO.addInstance();
 const GPIO3       = GPIO.addInstance();
 const GPIO4       = GPIO.addInstance();
+const GPIO5       = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
@@ -85,6 +86,11 @@ GPIO3.pinInstance.$name = "CONFIG_PIN_0";
 GPIO4.$hardware         = system.deviceData.board.components.LED_GREEN;
 GPIO4.$name             = "LED_1";
 GPIO4.pinInstance.$name = "CONFIG_PIN_1";
+
+GPIO5.$name             = "PINK_NOISE";
+GPIO5.mode              = "Output";
+GPIO5.gpioPin.$assign   = "boosterpack.23";
+GPIO5.pinInstance.$name = "CONFIG_PIN_2";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
