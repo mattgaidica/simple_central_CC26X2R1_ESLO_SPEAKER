@@ -1517,27 +1517,32 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			GPIO_write(LED_1, 0x01); // compute start
 			// Matt: tricks to remove the need for floats here
 			int32_t BLElatency = 0; // ms
-			int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
-			memcpy(&dominantFreq, pMsg->msg.handleValueNoti.pValue,
-					sizeof(int32_t));
-			memcpy(&phaseAngle, pMsg->msg.handleValueNoti.pValue + 4,
-					sizeof(int32_t));
+			int32_t SWAflag, dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
+			memcpy(&SWAflag, pMsg->msg.handleValueNoti.pValue, sizeof(int32_t));
+			if (SWAflag == 0xFFFFFFFF) {
+				memcpy(&dominantFreq, pMsg->msg.handleValueNoti.pValue + 4,
+						sizeof(int32_t));
+				memcpy(&phaseAngle, pMsg->msg.handleValueNoti.pValue + 8,
+						sizeof(int32_t));
 
-			int32_t targetPhaseAngle = 0 * 1000;
-			int32_t remainingPhase = phaseAngle + targetPhaseAngle;
-			if (remainingPhase < 0) {
-				remainingPhase = -remainingPhase;
+				int32_t targetPhaseAngle = 0 * 1000;
+				int32_t remainingPhase = phaseAngle + targetPhaseAngle;
+				if (remainingPhase < 0) {
+					remainingPhase = -remainingPhase;
+				} else {
+					remainingPhase = (360 * 1000) - remainingPhase;
+				}
+				int32_t msToStim =
+						(1000 * remainingPhase / (360 * dominantFreq));
+				// !! handle BLE latency
+				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
+				GPIO_write(LED_0, 0x01); // STIMULATE indicator
+				GPIO_write(PINK_NOISE, 0x01); // STIMULATE
+				Util_startClock(&notifTimeout); // turn off here
 			} else {
-				remainingPhase = (360*1000) - remainingPhase;
+				// eslo sending data, store on board
 			}
-			int32_t msToStim = (1000 * remainingPhase / (360 * dominantFreq));
-			// !! handle BLE latency
-			Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 			GPIO_write(LED_1, 0x00); // compute end
-			GPIO_write(LED_0, 0x01); // STIMULATE
-			GPIO_write(PINK_NOISE, 0x01); // STIMULATE
-			Util_startClock(&notifTimeout); // turn off here
-//			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "SWA Detected");
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
 			// ATT request-response or indication-confirmation flow control is
 			// violated. All subsequent ATT requests or indications will be dropped.
@@ -2559,7 +2564,7 @@ bool SimpleCentral_enableNotif(uint8_t index) {
 	uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);
 	SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
-	// Enable notify for outgoing data
+// Enable notify for outgoing data
 	if ((req.pValue != NULL) && streamServiceHandle.chars[0].cccdHandle) {
 		req.handle = streamServiceHandle.chars[0].cccdHandle;
 		req.len = 2;
