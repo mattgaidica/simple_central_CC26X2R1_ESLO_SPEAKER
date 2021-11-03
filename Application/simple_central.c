@@ -85,6 +85,8 @@
 #include "simple_central.h"
 #include "simple_central_menu.h"
 
+#include "eslo.h"
+
 /*********************************************************************
  * MACROS
  */
@@ -92,6 +94,8 @@
 /*********************************************************************
  * CONSTANTS
  */
+
+#define STIM_TIMEOUT_PERIOD		50 // ms
 
 // Application events
 #define SC_EVT_KEY_CHANGE          0x01
@@ -104,7 +108,8 @@
 #define SC_EVT_PASSCODE_NEEDED     0x08
 #define SC_EVT_READ_RPA            0x09
 #define SC_EVT_INSUFFICIENT_MEM    0x0A
-#define	ES_NOTIF_TIMEOUT		   0x0B
+#define	ES_STIM_TIMEOUT		   	   0x0B
+#define	ES_DATA_TIMEOUT		   	   0x0C
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -263,7 +268,8 @@ typedef struct {
 	uint8_t status;            // bitwise status flag
 } groupListElem_t;
 
-static Clock_Struct notifTimeout;
+static Clock_Struct stimTimeout;
+static Clock_Struct dataTimeout;
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -394,6 +400,10 @@ static uint8_t numGroupMembers = 0;
 
 //Connection in progress to avoid double initiate
 static groupListElem_t *memberInProg;
+
+// ESLO Vars
+uint16_t iNotifData = 0;
+int32_t swaBuffer[SWA_LEN * 2] = { 0 };
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -662,8 +672,13 @@ static void SimpleCentral_init(void) {
 	tbm_initTwoBtnMenu(dispHandle, &scMenuMain, 5, SimpleCentral_menuSwitchCb);
 	Display_printf(dispHandle, SC_ROW_SEPARATOR, 0, "====================");
 
-	Util_constructClock(&notifTimeout, SimpleCentral_clockHandler, 50, 0,
-	false, ES_NOTIF_TIMEOUT);
+	Util_constructClock(&stimTimeout, SimpleCentral_clockHandler,
+	STIM_TIMEOUT_PERIOD, 0,
+	false, ES_STIM_TIMEOUT);
+
+	Util_constructClock(&dataTimeout, SimpleCentral_clockHandler,
+	DATA_TIMEOUT_PERIOD, 0,
+	false, ES_DATA_TIMEOUT);
 }
 
 /*********************************************************************
@@ -1513,16 +1528,16 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			}
 
 			tbm_goTo(&scMenuPerConn);
-		} else if (pMsg->method == ATT_HANDLE_VALUE_NOTI) {
+		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
 			GPIO_write(LED_1, 0x01); // compute start
 			// Matt: tricks to remove the need for floats here
-			int32_t BLElatency = 0; // ms
-			int32_t SWAflag, dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
-			memcpy(&SWAflag, pMsg->msg.handleValueNoti.pValue, sizeof(int32_t));
-			if (SWAflag == 0xFFFFFFFF) {
-				memcpy(&dominantFreq, pMsg->msg.handleValueNoti.pValue + 4,
+			int32_t SWAflag;
+			memcpy(&SWAflag, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
+			if (SWAflag == SWA_KEY) {
+				int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
+				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
 						sizeof(int32_t));
-				memcpy(&phaseAngle, pMsg->msg.handleValueNoti.pValue + 8,
+				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
 						sizeof(int32_t));
 
 				int32_t targetPhaseAngle = 0 * 1000;
@@ -1537,12 +1552,28 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				// !! handle BLE latency
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 				GPIO_write(LED_0, 0x01); // STIMULATE indicator
-				GPIO_write(PINK_NOISE, 0x01); // STIMULATE
-				Util_startClock(&notifTimeout); // turn off here
+				GPIO_write(GPIO_STIM, 0x01); // STIMULATE
+				Util_startClock(&stimTimeout); // turn off here
+				Util_startClock(&dataTimeout); // reset in case indications fail
 			} else {
 				// eslo sending data, store on board
+				if (iNotifData == 0) {
+					memset(swaBuffer, 0x00, sizeof(uint32_t) * SWA_LEN * 2);
+				}
+				for (uint8_t i = 0; i < pMsg->msg.handleValueInd.len; i += 4) {
+					memcpy(&swaBuffer[iNotifData],
+							pMsg->msg.handleValueInd.pValue + i,
+							sizeof(int32_t));
+					iNotifData++;
+				}
+				if (iNotifData >= SWA_LEN * 2) {
+					Util_stopClock(&dataTimeout); // cancel timer
+					iNotifData = 0;
+					// write SWA buffer, dominantFreq, and phaseAngle to memory
+				}
 			}
 			GPIO_write(LED_1, 0x00); // compute end
+			ATT_HandleValueCfm(pMsg->connHandle); // ack
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
 			// ATT request-response or indication-confirmation flow control is
 			// violated. All subsequent ATT requests or indications will be dropped.
@@ -2179,9 +2210,13 @@ void SimpleCentral_clockHandler(UArg arg) {
 		SimpleCentral_enqueueMsg(SC_EVT_READ_RPA, 0, NULL);
 		break;
 
-	case ES_NOTIF_TIMEOUT:
+	case ES_STIM_TIMEOUT:
 		GPIO_write(LED_0, 0x00);
-		GPIO_write(PINK_NOISE, 0x00);
+		GPIO_write(GPIO_STIM, 0x00);
+		break;
+
+	case ES_DATA_TIMEOUT:
+		iNotifData = 0;
 		break;
 
 	default:
@@ -2558,7 +2593,8 @@ bool SimpleCentral_enableNotif(uint8_t index) {
 // Process message.
 	attWriteReq_t req;
 	bStatus_t retVal = FAILURE;
-	uint8 configData[2] = { 0x01, 0x00 };
+	// GATT_CLIENT_CFG_INDICATE
+	uint8 configData[2] = { 0x02, 0x00 }; // 00: none, 01: notif, 02: ind, 03: both
 	req.pValue = GATT_bm_alloc(scConnHandle, ATT_WRITE_REQ, 2, NULL);
 
 	uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);

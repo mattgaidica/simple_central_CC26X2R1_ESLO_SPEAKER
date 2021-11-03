@@ -44,8 +44,12 @@
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.OPT_LEVEL.release.1512149045" name="Optimization level (--opt_level, -O)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.OPT_LEVEL.release" useByScannerDiscovery="false" value="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.OPT_LEVEL.off" valueType="enumerated"/>
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.LITTLE_ENDIAN.1900727178" name="Little endian code [See 'General' page to edit] (--little_endian, -me)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.LITTLE_ENDIAN" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.INCLUDE_PATH.873518952" name="Add dir to #include search path (--include_path, -I)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.INCLUDE_PATH" valueType="includePath">
+									<listOptionValue builtIn="false" value="${workspace_loc:/simple_peripheral_CC2652R1_ESLORB2/Profiles ESLO}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/simple_peripheral_CC2652R1_ESLORB2/ADS129X}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/simple_peripheral_CC2652R1_ESLORB2/ESLO}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/simple_peripheral_CC2652R1_ESLORB2/LSM6DSOX}"/>
+									<listOptionValue builtIn="false" value="${workspace_loc:/simple_peripheral_CC2652R1_ESLORB2/NAND}"/>
 									<listOptionValue builtIn="false" value="${COM_TI_SIMPLELINK_CC13X2_26X2_SDK_INCLUDE_PATH}"/>
-									<listOptionValue builtIn="false" value="${workspace_loc:/${ProjName}/Profiles ESLO}"/>
 									<listOptionValue builtIn="false" value="${SYSCONFIG_TOOL_INCLUDE_PATH}"/>
 									<listOptionValue builtIn="false" value="${PROJECT_ROOT}"/>
 									<listOptionValue builtIn="false" value="${PROJECT_ROOT}/${ConfigName}"/>

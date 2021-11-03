@@ -32,11 +32,6 @@
 			<locationURI>COM_TI_SIMPLELINK_CC13X2_26X2_SDK_INSTALL_DIR/source/ti/boards/CC26X2R1_LAUNCHXL/Board.html</locationURI>
 		</link>
 		<link>
-			<name>Profiles ESLO</name>
-			<type>2</type>
-			<locationURI>PARENT-1-PROJECT_LOC/simple_peripheral_CC2652R1_ESLORB2/Profiles%20ESLO</locationURI>
-		</link>
-		<link>
 			<name>Application/board_key.c</name>
 			<type>1</type>
 			<locationURI>COM_TI_SIMPLELINK_CC13X2_26X2_SDK_INSTALL_DIR/source/ti/ble5stack/common/cc26xx/board_key.c</locationURI>
