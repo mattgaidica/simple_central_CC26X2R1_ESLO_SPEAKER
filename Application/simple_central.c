@@ -386,7 +386,7 @@ static GAP_Addr_Modes_t addrMode = DEFAULT_ADDRESS_MODE;
 static uint8 rpa[B_ADDR_LEN] = { 0 };
 
 // Auto connect Disabled/Enabled {0 - Disabled, 1- Group A , 2-Group B, ...}
-uint8_t autoConnect = AUTOCONNECT_GROUP_ES;
+uint8_t autoConnect = AUTOCONNECT_DISABLE; //AUTOCONNECT_GROUP_ES;
 
 //AutoConnect Group list
 static osal_list_list groupList;
@@ -1529,30 +1529,34 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
-			GPIO_write(LED_1, 0x01); // compute start
 			// Matt: tricks to remove the need for floats here
-			int32_t SWAflag;
-			memcpy(&SWAflag, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
-			if (SWAflag == SWA_KEY) {
+			int32_t SWAkey;
+			memcpy(&SWAkey, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
+			if (SWAkey == SWA_KEY) {
 				int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
 						sizeof(int32_t));
 				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
 						sizeof(int32_t));
 
-				int32_t targetPhaseAngle = 0 * 1000;
-				int32_t remainingPhase = phaseAngle + targetPhaseAngle;
+				int32_t targetPhaseAngle = 270 * 1000;
+				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
+
 				if (remainingPhase < 0) {
-					remainingPhase = -remainingPhase;
+					remainingPhase = -remainingPhase; // this shouldn't happen
 				} else {
 					remainingPhase = (360 * 1000) - remainingPhase;
 				}
 				int32_t msToStim =
 						(1000 * remainingPhase / (360 * dominantFreq));
 				// !! handle BLE latency
+				if (msToStim < 0 | msToStim > 3000) {
+					return; // invalid, return and pretend STIM was never indicated
+				}
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 				GPIO_write(LED_0, 0x01); // STIMULATE indicator
 				GPIO_write(GPIO_STIM, 0x01); // STIMULATE
+				iNotifData = 0; // stim always precedes storing data
 				Util_startClock(&stimTimeout); // turn off here
 				Util_startClock(&dataTimeout); // reset in case indications fail
 			} else {
@@ -2610,6 +2614,7 @@ bool SimpleCentral_enableNotif(uint8_t index) {
 		retVal = GATT_WriteNoRsp(scConnHandle, &req);
 	}
 	if (retVal == SUCCESS) {
+		Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Indications Enabled");
 		return (true);
 	}
 	return (false);
