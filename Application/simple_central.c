@@ -1539,7 +1539,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
 						sizeof(int32_t));
 
-				int32_t targetPhaseAngle = 270 * 1000;
+				int32_t targetPhaseAngle = 0 * 1000; // 0 <= target < 360
 				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
 
 				if (remainingPhase < 0) {
