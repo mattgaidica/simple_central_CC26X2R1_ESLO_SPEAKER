@@ -96,6 +96,7 @@
  */
 
 #define STIM_TIMEOUT_PERIOD		50 // ms
+#define SWA_MODE_PERIOD			100
 
 // Application events
 #define SC_EVT_KEY_CHANGE          0x01
@@ -110,6 +111,7 @@
 #define SC_EVT_INSUFFICIENT_MEM    0x0A
 #define	ES_STIM_TIMEOUT		   	   0x0B
 #define	ES_DATA_TIMEOUT		   	   0x0C
+#define ES_MODE_CHECK			   0x0D
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -404,6 +406,7 @@ static groupListElem_t *memberInProg;
 // ESLO Vars
 uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
+static Clock_Struct clkSwaMode;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -664,7 +667,7 @@ static void SimpleCentral_init(void) {
 // Initialize GAP layer for Central role and register to receive GAP events
 	GAP_DeviceInit(GAP_PROFILE_CENTRAL, selfEntity, addrMode, &pRandomAddress);
 
-	dispHandle = Display_open(Display_Type_ANY, NULL);
+	dispHandle = Display_open(Display_Type_LCD, NULL); //Display_Type_ANY, NULL);
 
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
@@ -679,6 +682,9 @@ static void SimpleCentral_init(void) {
 	Util_constructClock(&dataTimeout, SimpleCentral_clockHandler,
 	DATA_TIMEOUT_PERIOD, 0,
 	false, ES_DATA_TIMEOUT);
+
+	Util_constructClock(&clkSwaMode, SimpleCentral_clockHandler,
+			SWA_MODE_PERIOD, SWA_MODE_PERIOD, true, ES_MODE_CHECK);
 }
 
 /*********************************************************************
@@ -2221,6 +2227,10 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	case ES_DATA_TIMEOUT:
 		iNotifData = 0;
+		break;
+
+	case ES_MODE_CHECK:
+		GPIO_write(LED_0, GPIO_read(SWA_MODE));
 		break;
 
 	default:

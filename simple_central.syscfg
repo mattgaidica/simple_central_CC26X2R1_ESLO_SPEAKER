@@ -4,6 +4,8 @@
  * @cliArgs --board "/ti/boards/CC26X2R1_LAUNCHXL" --product "simplelink_cc13x2_26x2_sdk@5.20.00.52"
  * @versions {"data":"2021060817","timestamp":"2021060817","tool":"1.8.2+1992","templates":null}
  */
+const BOOSTXL_SHARP128 = scripting.addHardware("/ti/boards/boosterpacks/BOOSTXL-SHARP128");
+const MSP430BOOST_SHARP96 = scripting.addHardware("/ti/boards/boosterpacks/MSP430BOOST-SHARP96");
 
 /**
  * Import the modules used in this configuration.
@@ -13,6 +15,7 @@ const CCFG        = scripting.addModule("/ti/devices/CCFG");
 const rfdesign    = scripting.addModule("/ti/devices/radioconfig/rfdesign");
 const Display     = scripting.addModule("/ti/display/Display");
 const Display1    = Display.addInstance();
+const Display2    = Display.addInstance();
 const AESCCM      = scripting.addModule("/ti/drivers/AESCCM");
 const AESCCM1     = AESCCM.addInstance();
 const AESCTRDRBG  = scripting.addModule("/ti/drivers/AESCTRDRBG");
@@ -27,11 +30,14 @@ const GPIO2       = GPIO.addInstance();
 const GPIO3       = GPIO.addInstance();
 const GPIO4       = GPIO.addInstance();
 const GPIO5       = GPIO.addInstance();
+const GPIO9       = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
 const RF          = scripting.addModule("/ti/drivers/RF");
 const RTOS        = scripting.addModule("/ti/drivers/RTOS");
+const SPI         = scripting.addModule("/ti/drivers/SPI", {}, false);
+const SPI1        = SPI.addInstance();
 const TRNG        = scripting.addModule("/ti/drivers/TRNG");
 const TRNG1       = TRNG.addInstance();
 
@@ -42,6 +48,8 @@ ble.deviceRole                         = "CENTRAL_CFG";
 ble.lockProject                        = true;
 ble.bondPairing                        = "GAPBOND_PAIRING_MODE_INITIATE";
 ble.maxConnNum                         = 1;
+ble.randomAddress                      = "BA:BA:BA:00:00:00";
+ble.deviceName                         = "ESLO_BASE";
 ble.radioConfig.codeExportConfig.$name = "ti_devices_radioconfig_code_export_param0";
 ble.connUpdateParamsCentral.$name      = "ti_ble5stack_general_ble_conn_update_params0";
 
@@ -51,14 +59,22 @@ CCFG.dioBootloaderBackdoor    = 13;
 CCFG.levelBootloaderBackdoor  = "Active low";
 CCFG.ccfgTemplate.$name       = "ti_devices_CCFGTemplate0";
 
-Display1.$name                          = "CONFIG_Display_0";
-Display1.$hardware                      = system.deviceData.board.components.XDS110UART;
-Display1.enableANSI                     = true;
-Display1.uartBufferSize                 = 128;
-Display1.uart.$name                     = "CONFIG_DISPLAY_UART";
-Display1.uart.txPinInstance.outputState = "High";
-Display1.uart.txPinInstance.$name       = "CONFIG_PIN_UART_TX";
-Display1.uart.rxPinInstance.$name       = "CONFIG_PIN_UART_RX";
+Display1.$name                       = "CONFIG_Display_0";
+Display1.enableANSI                  = true;
+Display1.uartBufferSize              = 128;
+Display1.displayType                 = "LCD";
+Display1.$hardware                   = BOOSTXL_SHARP128.components.LS013B7DH03;
+Display1.lcdEnable.$name             = "CONFIG_GPIO_0";
+Display1.lcdEnable.pinInstance.$name = "CONFIG_PIN_5";
+Display1.lcdPower.$name              = "CONFIG_GPIO_1";
+Display1.lcdPower.pinInstance.$name  = "CONFIG_PIN_6";
+Display1.lcdSS.$name                 = "CONFIG_GPIO_2";
+Display1.lcdSS.pinInstance.$name     = "CONFIG_PIN_7";
+
+Display2.$name                    = "CONFIG_Display_1";
+Display2.uart.$name               = "CONFIG_UART_0";
+Display2.uart.txPinInstance.$name = "CONFIG_PIN_3";
+Display2.uart.rxPinInstance.$name = "CONFIG_PIN_4";
 
 AESCCM1.$name = "Board_AESCCM0";
 
@@ -90,13 +106,25 @@ GPIO4.pinInstance.$name = "CONFIG_PIN_1";
 GPIO5.mode              = "Output";
 GPIO5.$name             = "GPIO_STIM";
 GPIO5.outputStrength    = "High";
-GPIO5.gpioPin.$assign   = "boosterpack.23";
+GPIO5.gpioPin.$assign   = "boosterpack.24";
 GPIO5.pinInstance.$name = "CONFIG_PIN_2";
+
+GPIO9.$name             = "SWA_MODE";
+GPIO9.pull              = "Pull Up";
+GPIO9.gpioPin.$assign   = "boosterpack.23";
+GPIO9.pinInstance.$name = "CONFIG_PIN_11";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
 NVS1.internalFlash.regionBase = 0x48000;
 NVS1.internalFlash.regionSize = 0x4000;
+
+SPI1.$name                 = "CONFIG_SPI_0";
+Display1.spi               = SPI1;
+SPI1.$hardware             = system.deviceData.board.components.LP_SPI;
+SPI1.sclkPinInstance.$name = "CONFIG_PIN_8";
+SPI1.misoPinInstance.$name = "CONFIG_PIN_9";
+SPI1.mosiPinInstance.$name = "CONFIG_PIN_10";
 
 TRNG1.$name = "CONFIG_TRNG_0";
 
@@ -105,10 +133,19 @@ TRNG1.$name = "CONFIG_TRNG_0";
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
  * re-solve from scratch.
  */
-Display1.uart.uart.$suggestSolution       = "UART1";
-Display1.uart.uart.txPin.$suggestSolution = "boosterpack.4";
-Display1.uart.uart.rxPin.$suggestSolution = "boosterpack.3";
-GPIO1.gpioPin.$suggestSolution            = "boosterpack.13";
-GPIO2.gpioPin.$suggestSolution            = "boosterpack.12";
-GPIO3.gpioPin.$suggestSolution            = "boosterpack.39";
-GPIO4.gpioPin.$suggestSolution            = "boosterpack.40";
+Display1.lcdEnable.gpioPin.$suggestSolution = "boosterpack.5";
+Display1.lcdPower.gpioPin.$suggestSolution  = "boosterpack.2";
+Display1.lcdSS.gpioPin.$suggestSolution     = "boosterpack.6";
+Display2.uart.uart.$suggestSolution         = "UART1";
+Display2.uart.uart.txPin.$suggestSolution   = "boosterpack.30";
+Display2.uart.uart.rxPin.$suggestSolution   = "boosterpack.29";
+GPIO1.gpioPin.$suggestSolution              = "boosterpack.13";
+GPIO2.gpioPin.$suggestSolution              = "boosterpack.12";
+GPIO3.gpioPin.$suggestSolution              = "boosterpack.39";
+GPIO4.gpioPin.$suggestSolution              = "boosterpack.40";
+SPI1.spi.$suggestSolution                   = "SSI0";
+SPI1.spi.sclkPin.$suggestSolution           = "boosterpack.7";
+SPI1.spi.misoPin.$suggestSolution           = "boosterpack.14";
+SPI1.spi.mosiPin.$suggestSolution           = "boosterpack.15";
+SPI1.spi.dmaRxChannel.$suggestSolution      = "DMA_CH3";
+SPI1.spi.dmaTxChannel.$suggestSolution      = "DMA_CH4";
