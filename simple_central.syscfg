@@ -30,12 +30,14 @@ const GPIO2       = GPIO.addInstance();
 const GPIO3       = GPIO.addInstance();
 const GPIO4       = GPIO.addInstance();
 const GPIO5       = GPIO.addInstance();
-const GPIO9       = GPIO.addInstance();
+const GPIO6       = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
 const RF          = scripting.addModule("/ti/drivers/RF");
 const RTOS        = scripting.addModule("/ti/drivers/RTOS");
+const SD          = scripting.addModule("/ti/drivers/SD", {}, false);
+const SD1         = SD.addInstance();
 const SPI         = scripting.addModule("/ti/drivers/SPI", {}, false);
 const SPI1        = SPI.addInstance();
 const TRNG        = scripting.addModule("/ti/drivers/TRNG");
@@ -96,11 +98,11 @@ GPIO2.$name             = "CONFIG_GPIO_BTN2";
 GPIO2.pinInstance.$name = "CONFIG_PIN_BTN2";
 
 GPIO3.$hardware         = system.deviceData.board.components.LED_RED;
-GPIO3.$name             = "LED_0";
+GPIO3.$name             = "LED_RED";
 GPIO3.pinInstance.$name = "CONFIG_PIN_0";
 
 GPIO4.$hardware         = system.deviceData.board.components.LED_GREEN;
-GPIO4.$name             = "LED_1";
+GPIO4.$name             = "LED_GREEN";
 GPIO4.pinInstance.$name = "CONFIG_PIN_1";
 
 GPIO5.mode              = "Output";
@@ -109,19 +111,25 @@ GPIO5.outputStrength    = "High";
 GPIO5.gpioPin.$assign   = "boosterpack.24";
 GPIO5.pinInstance.$name = "CONFIG_PIN_2";
 
-GPIO9.$name             = "SWA_MODE";
-GPIO9.pull              = "Pull Up";
-GPIO9.gpioPin.$assign   = "boosterpack.23";
-GPIO9.pinInstance.$name = "CONFIG_PIN_11";
+GPIO6.$name             = "SWA_MODE";
+GPIO6.pull              = "Pull Up";
+GPIO6.gpioPin.$assign   = "boosterpack.23";
+GPIO6.pinInstance.$name = "CONFIG_PIN_11";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
 NVS1.internalFlash.regionBase = 0x48000;
 NVS1.internalFlash.regionSize = 0x4000;
 
+SD1.$name                         = "CONFIG_SD_0";
+SD1.$hardware                     = BOOSTXL_SHARP128.components.SD_CARD;
+SD1.useFatFS                      = true;
+SD1.slaveSelect.$name             = "CONFIG_GPIO_3";
+SD1.slaveSelect.pinInstance.$name = "CONFIG_PIN_12";
+
 SPI1.$name                 = "CONFIG_SPI_0";
+SD1.spiInstance            = SPI1;
 Display1.spi               = SPI1;
-SPI1.$hardware             = system.deviceData.board.components.LP_SPI;
 SPI1.sclkPinInstance.$name = "CONFIG_PIN_8";
 SPI1.misoPinInstance.$name = "CONFIG_PIN_9";
 SPI1.mosiPinInstance.$name = "CONFIG_PIN_10";
@@ -143,6 +151,7 @@ GPIO1.gpioPin.$suggestSolution              = "boosterpack.13";
 GPIO2.gpioPin.$suggestSolution              = "boosterpack.12";
 GPIO3.gpioPin.$suggestSolution              = "boosterpack.39";
 GPIO4.gpioPin.$suggestSolution              = "boosterpack.40";
+SD1.slaveSelect.gpioPin.$suggestSolution    = "boosterpack.8";
 SPI1.spi.$suggestSolution                   = "SSI0";
 SPI1.spi.sclkPin.$suggestSolution           = "boosterpack.7";
 SPI1.spi.misoPin.$suggestSolution           = "boosterpack.14";

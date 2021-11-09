@@ -53,22 +53,23 @@
 
 // Note: The defines should be updated accordingly if there is any change
 //       in the order of the items of the menu objects the items belong to.
-#define SC_ITEM_SCANPHY     TBM_ITEM(0)  // "Set Scanning PHY"
-#define SC_ITEM_STARTDISC   TBM_ITEM(1)  // "Discover Devices"
-#define SC_ITEM_STOPDISC    TBM_ITEM(2)  // "Stop Discovering"
-#define SC_ITEM_CONNECT     TBM_ITEM(3)  // "Connect To"
-#define SC_ITEM_CANCELCONN  TBM_ITEM(4)  // "Cancel Connecting"
-#define SC_ITEM_SELECTCONN  TBM_ITEM(5)  // "Work With"
-#define SC_ITEM_AUTOCONNECT TBM_ITEM(6)  // "Auto Connect"
+//#define SC_ITEM_SCANPHY     TBM_ITEM(0)  // "Set Scanning PHY"
+#define SC_ITEM_STARTDISC   TBM_ITEM(0)  // "Discover Devices"
+#define SC_ITEM_STOPDISC    TBM_ITEM(1)  // "Stop Discovering"
+#define SC_ITEM_CONNECT     TBM_ITEM(2)  // "Connect To"
+#define SC_ITEM_CANCELCONN  TBM_ITEM(3)  // "Cancel Connecting"
+#define SC_ITEM_SELECTCONN  TBM_ITEM(4)  // "Work With"
+#define SC_ITEM_AUTOCONNECT TBM_ITEM(5)  // "Auto Connect"
 
-#define SC_ITEM_GATTREAD    TBM_ITEM(0)  // "GATT Read"
-#define SC_ITEM_GATTWRITE   TBM_ITEM(1)  // "GATT Write"
-#define SC_ITEM_ENABLENOTIF TBM_ITEM(2)  // "GATT Write"
-#define SC_ITEM_STRTRSSI    TBM_ITEM(3)  // "Start RSSI Reading"
-#define SC_ITEM_STOPRSSI    TBM_ITEM(4)  // "Stop RSSI Reading"
-#define SC_ITEM_UPDATE      TBM_ITEM(5)  // "Connection Update"
-#define SC_ITEM_CONNPHY     TBM_ITEM(6)  // "Set Connection PHY"
-#define SC_ITEM_DISCONNECT  TBM_ITEM(7)  // "Disconnect"
+//#define SC_ITEM_GATTREAD    TBM_ITEM(0)  // "GATT Read"
+//#define SC_ITEM_GATTWRITE   TBM_ITEM(1)  // "GATT Write"
+//#define SC_ITEM_ENABLENOTIF TBM_ITEM(2)  // "GATT Write"
+//#define SC_ITEM_STRTRSSI    TBM_ITEM(3)  // "Start RSSI Reading"
+//#define SC_ITEM_STOPRSSI    TBM_ITEM(4)  // "Stop RSSI Reading"
+//#define SC_ITEM_UPDATE      TBM_ITEM(5)  // "Connection Update"
+//#define SC_ITEM_CONNPHY     TBM_ITEM(6)  // "Set Connection PHY"
+#define SC_ITEM_ENABINDI    TBM_ITEM(0)  // "Enable INdications"
+#define SC_ITEM_DISCONNECT  TBM_ITEM(1)  // "Disconnect"
 
 #ifdef __cplusplus
 extern "C"

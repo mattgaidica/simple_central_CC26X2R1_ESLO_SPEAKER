@@ -22,14 +22,14 @@ void SimpleCentral_buildMenu(void)
 {
 // Menu: Main
 // upper: none
-  MENU_OBJ(scMenuMain, "Simple Central", 7, NULL)
-  MENU_ITEM_SUBMENU(scMenuMain,0,&scMenuScanPhy)
-  MENU_ITEM_ACTION(scMenuMain,1,"Discover Devices",  SimpleCentral_doDiscoverDevices)
-  MENU_ITEM_ACTION(scMenuMain,2,"Stop Discovering",  SimpleCentral_doStopDiscovering)
-  MENU_ITEM_SUBMENU(scMenuMain,3,&scMenuConnect)
-  MENU_ITEM_ACTION(scMenuMain,4,"Cancel Connecting", SimpleCentral_doCancelConnecting)
-  MENU_ITEM_SUBMENU(scMenuMain,5,&scMenuSelectConn)
-  MENU_ITEM_SUBMENU(scMenuMain,6,&scMenuAutoConnect)
+  MENU_OBJ(scMenuMain, "Simple Central", 6, NULL)
+//  MENU_ITEM_SUBMENU(scMenuMain,0,&scMenuScanPhy)
+  MENU_ITEM_ACTION(scMenuMain,0,"Discover Devices",  SimpleCentral_doDiscoverDevices)
+  MENU_ITEM_ACTION(scMenuMain,1,"Stop Discovering",  SimpleCentral_doStopDiscovering)
+  MENU_ITEM_SUBMENU(scMenuMain,2,&scMenuConnect)
+  MENU_ITEM_ACTION(scMenuMain,3,"Cancel Connecting", SimpleCentral_doCancelConnecting)
+  MENU_ITEM_SUBMENU(scMenuMain,4,&scMenuSelectConn)
+  MENU_ITEM_SUBMENU(scMenuMain,5,&scMenuAutoConnect)
   MENU_OBJ_END
 
 // Menu: ScanPhy
@@ -66,15 +66,15 @@ void SimpleCentral_buildMenu(void)
 
 // Menu: PerConnection
 // upper: SelectDevice
-  MENU_OBJ(scMenuPerConn, NULL, 8, &scMenuSelectConn)
-  MENU_ITEM_ACTION(scMenuPerConn,0,"GATT Read",          SimpleCentral_doGattRead)
-  MENU_ITEM_SUBMENU(scMenuPerConn,1,&scMenuGattWrite)
-  MENU_ITEM_ACTION(scMenuPerConn,2,"Enable Indications", SimpleCentral_enableNotif)
-  MENU_ITEM_ACTION(scMenuPerConn,3,"Start RSSI Reading", SimpleCentral_doRssiRead)
-  MENU_ITEM_ACTION(scMenuPerConn,4,"Stop RSSI Reading",  SimpleCentral_doRssiRead)
-  MENU_ITEM_ACTION(scMenuPerConn,5,"Connection Update",  SimpleCentral_doConnUpdate)
-  MENU_ITEM_SUBMENU(scMenuPerConn,6,&scMenuConnPhy)
-  MENU_ITEM_ACTION(scMenuPerConn,7,"Disconnect",         SimpleCentral_doDisconnect)
+  MENU_OBJ(scMenuPerConn, NULL, 2, &scMenuSelectConn)
+//  MENU_ITEM_ACTION(scMenuPerConn,0,"GATT Read",          SimpleCentral_doGattRead)
+//  MENU_ITEM_SUBMENU(scMenuPerConn,1,&scMenuGattWrite)
+  MENU_ITEM_ACTION(scMenuPerConn,0,"Enable Indications", SimpleCentral_enableNotif)
+//  MENU_ITEM_ACTION(scMenuPerConn,3,"Start RSSI Reading", SimpleCentral_doRssiRead)
+//  MENU_ITEM_ACTION(scMenuPerConn,4,"Stop RSSI Reading",  SimpleCentral_doRssiRead)
+//  MENU_ITEM_ACTION(scMenuPerConn,5,"Connection Update",  SimpleCentral_doConnUpdate)
+//  MENU_ITEM_SUBMENU(scMenuPerConn,6,&scMenuConnPhy)
+  MENU_ITEM_ACTION(scMenuPerConn,1,"Disconnect",         SimpleCentral_doDisconnect)
   MENU_OBJ_END
 
 // Menu: GattWrite
