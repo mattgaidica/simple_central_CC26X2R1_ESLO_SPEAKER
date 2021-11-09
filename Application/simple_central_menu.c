@@ -22,7 +22,7 @@ void SimpleCentral_buildMenu(void)
 {
 // Menu: Main
 // upper: none
-  MENU_OBJ(scMenuMain, "Simple Central", 6, NULL)
+  MENU_OBJ(scMenuMain, "ESLO Speaker", 6, NULL)
 //  MENU_ITEM_SUBMENU(scMenuMain,0,&scMenuScanPhy)
   MENU_ITEM_ACTION(scMenuMain,0,"Discover Devices",  SimpleCentral_doDiscoverDevices)
   MENU_ITEM_ACTION(scMenuMain,1,"Stop Discovering",  SimpleCentral_doStopDiscovering)
@@ -69,7 +69,7 @@ void SimpleCentral_buildMenu(void)
   MENU_OBJ(scMenuPerConn, NULL, 2, &scMenuSelectConn)
 //  MENU_ITEM_ACTION(scMenuPerConn,0,"GATT Read",          SimpleCentral_doGattRead)
 //  MENU_ITEM_SUBMENU(scMenuPerConn,1,&scMenuGattWrite)
-  MENU_ITEM_ACTION(scMenuPerConn,0,"Enable Indications", SimpleCentral_enableNotif)
+  MENU_ITEM_ACTION(scMenuPerConn,0,"Enable Indications", SimpleCentral_enableIndications)
 //  MENU_ITEM_ACTION(scMenuPerConn,3,"Start RSSI Reading", SimpleCentral_doRssiRead)
 //  MENU_ITEM_ACTION(scMenuPerConn,4,"Stop RSSI Reading",  SimpleCentral_doRssiRead)
 //  MENU_ITEM_ACTION(scMenuPerConn,5,"Connection Update",  SimpleCentral_doConnUpdate)

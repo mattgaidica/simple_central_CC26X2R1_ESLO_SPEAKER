@@ -109,9 +109,9 @@
  */
 
 #define STIM_TIMEOUT_PERIOD		50 // ms
-#define SWA_MODE_PERIOD			100 // ms
-#define EXP_PERIOD				5 // minutes
-#define EXP_DURATION			2 // minutes
+#define SWA_MODE_LOOP_PERIOD	200 // ms
+#define SWA_MODE_ACTION_PERIOD	5000 // ms
+#define EXP_PERIOD				30000 // ms
 
 // Application events
 #define SC_EVT_KEY_CHANGE          0x01
@@ -126,7 +126,11 @@
 #define SC_EVT_INSUFFICIENT_MEM    0x0A
 #define	ES_STIM_TIMEOUT		   	   0x0B
 #define	ES_DATA_TIMEOUT		   	   0x0C
-#define ES_MODE_CHECK			   0x0D
+#define ES_MODE_LOOP			   0x0D
+#define ES_MODE_ACTIONS			   0x0E
+#define ES_EXP_TIMEOUT			   0x0F
+#define ES_RESET_EXPERIMENT		   0x10
+#define ES_DO_AUTOCONNECT		   0x11
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -285,9 +289,6 @@ typedef struct {
 	uint8_t status;            // bitwise status flag
 } groupListElem_t;
 
-static Clock_Struct stimTimeout;
-static Clock_Struct dataTimeout;
-
 /*********************************************************************
  * GLOBAL VARIABLES
  */
@@ -375,17 +376,16 @@ simpleService_t streamServiceHandle = {
 		// Set Simple Stream Server service UUID
 		.uuid = { ATT_BT_UUID_SIZE, SimpleStreamServerUUID }, .startHandle =
 		GATT_INVALID_HANDLE, .endHandle = GATT_INVALID_HANDLE, .numChars = 1,
-		.chars = {
-		// Set Axy, could add all chars though -Matt
-				{ .uuid = { ATT_BT_UUID_SIZE, SimpleStreamServer_DataInUUID },
-						.handle = GATT_INVALID_HANDLE, .cccdHandle =
-						GATT_INVALID_HANDLE, }, }, };
+		.chars = { {
+				.uuid = { ATT_BT_UUID_SIZE, SimpleStreamServer_DataInUUID },
+				.handle = GATT_INVALID_HANDLE, .cccdHandle =
+				GATT_INVALID_HANDLE, }, }, };
 // Discovery done
-static bool discoveryDone = FALSE;
+//static uint8_t discoveryDone = 0x00;
 
-// Discovered service start and end handle
-static uint16_t svcStartHdl = 0;
-static uint16_t svcEndHdl = 0;
+// Discovered service start and end handle, deprecated -Matt
+//static uint16_t svcStartHdl = 0;
+//static uint16_t svcEndHdl = 0;
 
 // Value to write
 static uint8_t charVal = 0;
@@ -403,7 +403,7 @@ static GAP_Addr_Modes_t addrMode = DEFAULT_ADDRESS_MODE;
 static uint8 rpa[B_ADDR_LEN] = { 0 };
 
 // Auto connect Disabled/Enabled {0 - Disabled, 1- Group A , 2-Group B, ...}
-uint8_t autoConnect = AUTOCONNECT_DISABLE; //AUTOCONNECT_GROUP_ES;
+uint8_t autoConnect = AUTOCONNECT_GROUP_ES; // AUTOCONNECT_DISABLE;
 
 //AutoConnect Group list
 static osal_list_list groupList;
@@ -425,11 +425,19 @@ SDFatFS_Handle sdfatfsHandle;
 
 uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
-static Clock_Struct clkSwaMode;
 int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 uint32_t absoluteTime;
 uint16_t SWAfileCount = 0;
 uint8_t sd_online = 0x00;
+uint8_t expState = 0x00;
+uint8_t isBusy = 0x00;
+uint8_t paramsSynced = 0x00;
+
+static Clock_Struct clkSwaModeLoop;
+static Clock_Struct clkSwaActions;
+static Clock_Struct stimTimeout;
+static Clock_Struct dataTimeout;
+static Clock_Struct expTimeout;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -464,7 +472,7 @@ static void SimpleCentral_processPairState(uint8_t state,
 static void SimpleCentral_processPasscode(scPasscodeData_t *pData);
 
 static void SimpleCentral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg);
-static status_t SimpleCentral_StartRssi();
+//static status_t SimpleCentral_StartRssi();
 static status_t SimpleCentral_CancelRssi(uint16_t connHandle);
 
 static void SimpleCentral_passcodeCb(uint8_t *deviceAddr, uint16_t connHandle,
@@ -488,6 +496,7 @@ static void SimpleServiceDiscovery_processFindInfoRsp(attFindInfoRsp_t rsp,
 		simpleService_t *service);
 
 int32_t fatfs_getFatTime(void);
+void resetExperiment();
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -506,6 +515,17 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 /*********************************************************************
  * PUBLIC FUNCTIONS
  */
+
+void resetExperiment() {
+	isBusy = 0x00;
+	iNotifData = 0;
+	paramsSynced = 0x00;
+	if (numConn > 0) {
+		scConnHandle = connList[0].connHandle;
+		SimpleCentral_doDisconnect(0);
+	}
+	GPIO_write(LED_GREEN, 0x00);
+}
 
 /*
  *  ======== fatfs_getFatTime ========
@@ -588,13 +608,13 @@ static void SimpleCentral_autoConnect(void) {
 					osal_list_remove(&groupList, (osal_list_elem*) tempMember);
 					ICall_free(tempMember);
 				} else {
-					//Save pointer to connection in progress untill connection is established.
+					//Save pointer to connection in progress until connection is established.
 					memberInProg = tempMember;
 				}
 			}
 		} else {
 			Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
-					"AutoConnect turned off: Max connection reached.");
+					"AutoConn max conn.");
 		}
 	}
 }
@@ -762,9 +782,10 @@ static void SimpleCentral_init(void) {
 			Task_sleep(50000);
 		}
 	} else {
-		Display_printf(dispHandle, 0, 0, "SD card works...");
+		Display_printf(dispHandle, 0, 0, "SD card online...");
 		Task_sleep(100000);
 	}
+	GPIO_write(SWA_LIGHT, 0x00); // shutdown because its read as a mode later
 
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
@@ -780,8 +801,14 @@ static void SimpleCentral_init(void) {
 	DATA_TIMEOUT_PERIOD, 0,
 	false, ES_DATA_TIMEOUT);
 
-	Util_constructClock(&clkSwaMode, SimpleCentral_clockHandler,
-	SWA_MODE_PERIOD, SWA_MODE_PERIOD, true, ES_MODE_CHECK);
+	Util_constructClock(&clkSwaModeLoop, SimpleCentral_clockHandler,
+	SWA_MODE_LOOP_PERIOD, SWA_MODE_LOOP_PERIOD, true, ES_MODE_LOOP);
+
+	Util_constructClock(&clkSwaActions, SimpleCentral_clockHandler,
+	SWA_MODE_ACTION_PERIOD, SWA_MODE_ACTION_PERIOD, true, ES_MODE_ACTIONS);
+
+	Util_constructClock(&expTimeout, SimpleCentral_clockHandler, 100,
+	EXP_PERIOD, false, ES_EXP_TIMEOUT);
 }
 
 /*********************************************************************
@@ -1027,11 +1054,11 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 						pAdvRpt->pData, pAdvRpt->dataLen))
 		{
 			SimpleCentral_addScanInfo(pAdvRpt->addr, pAdvRpt->addrType);
-			Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Discovered: %s",
+			Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Disc: %s",
 					Util_convertBdAddr2Str(pAdvRpt->addr));
 		}
 #else // !DEFAULT_DEV_DISC_BY_SVC_UUID
-		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Discovered: %s",
+		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Disc: %s",
 				Util_convertBdAddr2Str(pAdvRpt->addr));
 #endif // DEFAULT_DEV_DISC_BY_SVC_UUID
 
@@ -1054,12 +1081,10 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 		if (autoConnect) {
 			itemsToEnable |= SC_ITEM_AUTOCONNECT;
 			if (numGroupMembers < MAX_NUM_BLE_CONNS) {
-				Display_printf(dispHandle, SC_ROW_AC, 0,
-						"AutoConnect: Not all members found, only %d members were found",
+				Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConn: only %d",
 						numGroupMembers);
 			} else {
-				Display_printf(dispHandle, SC_ROW_AC, 0,
-						"AutoConnect: Number of members in the group %d",
+				Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConn: %d",
 						numGroupMembers);
 				SimpleCentral_autoConnect();
 				if (numConn > 0) {
@@ -1084,8 +1109,8 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 			numReport = ((GapScan_Evt_End_t*) (pMsg->pData))->numReport;
 #endif // DEFAULT_DEV_DISC_BY_SVC_UUID
 
-			Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
-					"%d devices discovered", numReport);
+			Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "%d devices",
+					numReport);
 
 			if (numReport > 0) {
 				// Also enable "Connect to"
@@ -1205,6 +1230,18 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 		break;
 	}
 
+	case ES_RESET_EXPERIMENT: {
+		resetExperiment();
+		break;
+	}
+
+	case ES_DO_AUTOCONNECT: {
+//		SimpleCentral_doAutoConnect(autoConnect);
+		// -> GAP_LINK_ESTABLISHED_EVENT: SimpleCentral_doSelectConn(), SimpleCentral_enableIndications()
+		SimpleCentral_doDiscoverDevices(0);
+		break;
+	}
+
 	default:
 		// Do nothing.
 		break;
@@ -1285,7 +1322,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 				numConn);
 
 		// Display device address
-		Display_printf(dispHandle, SC_ROW_IDA, 0, "%s Addr: %s",
+		Display_printf(dispHandle, SC_ROW_IDA, 0, "%s: %s",
 				(addrMode <= ADDRMODE_RANDOM) ? "Dev" : "ID",
 				Util_convertBdAddr2Str(pPkt->devAddr));
 
@@ -1293,7 +1330,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 			// Update the current RPA.
 			memcpy(rpa, GAP_GetDevAddress(FALSE), B_ADDR_LEN);
 
-			Display_printf(dispHandle, SC_ROW_RPA, 0, "RP Addr: %s",
+			Display_printf(dispHandle, SC_ROW_RPA, 0, "RP: %s",
 					Util_convertBdAddr2Str(rpa));
 
 			// Create one-shot clock for RPA check event.
@@ -1314,8 +1351,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 				numGroupMembers--;
 				memberInProg = NULL;
 			}
-			Display_printf(dispHandle, SC_ROW_AC, 0,
-					"AutoConnect: Number of members in the group %d",
+			Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConn Grp: %d",
 					numGroupMembers);
 			//Keep on connecting to the remaining members in the list
 			SimpleCentral_autoConnect();
@@ -1325,8 +1361,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 			itemsToEnable |= SC_ITEM_SELECTCONN;
 		}
 
-		Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
-				"Conneting attempt cancelled");
+		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Connect cancelled");
 
 		// Enable "Discover Devices", "Connect To", and "Set Scanning PHY"
 		// and disable everything else.
@@ -1373,10 +1408,11 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 
 		pStrAddr = (uint8_t*) Util_convertBdAddr2Str(connList[connIndex].addr);
 
-		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Connected to %s",
-				pStrAddr);
+		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "%s", pStrAddr);
 		Display_printf(dispHandle, SC_ROW_NUM_CONN, 0, "Num Conns: %d",
 				numConn);
+
+		Util_startClock(&dataTimeout);
 
 		// Disable "Connect To" until another discovery is performed
 		itemsToDisable |= SC_ITEM_CONNECT;
@@ -1406,6 +1442,9 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		if ((autoConnect) && (pairMode != GAPBOND_PAIRING_MODE_INITIATE)) {
 			SimpleCentral_autoConnect();
 		}
+
+		SimpleCentral_doSelectConn(connIndex); // ESLO Speaker -Matt
+		SimpleCentral_enableIndications(0);
 		break;
 	}
 
@@ -1439,19 +1478,24 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 		// Cancel timers
 		SimpleCentral_CancelRssi(connHandle);
+		Util_stopClock(&dataTimeout); // cancel clock
+		// if peripheral drops out mid-stim/indication
+		if (isBusy == 0x01) {
+			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
+		}
 
 		// Mark this connection deleted in the connected device list.
 		connIndex = SimpleCentral_removeConnInfo(connHandle);
-		if (autoConnect) {
-			SimpleCentral_autoConnect();
-		}
+		// Rm for ESLO Speaker -Matt
+//		if (autoConnect) {
+//			SimpleCentral_autoConnect();
+//		}
 		// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
 		SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
 		pStrAddr = (uint8_t*) Util_convertBdAddr2Str(connList[connIndex].addr);
 
-		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "%s is disconnected",
-				pStrAddr);
+		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "(%s)", pStrAddr);
 		Display_printf(dispHandle, SC_ROW_NUM_CONN, 0, "Num Conns: %d",
 				numConn);
 
@@ -1523,10 +1567,10 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP, "APP : GAP msg status=%d, opcode=%s\n", 0, "GAP_LINK_PARAM_UPDATE_EVENT");
 		if (linkDB_GetInfo(pPkt->connectionHandle, &linkInfo) == SUCCESS) {
 			if (pPkt->status == SUCCESS) {
-				Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
-						"Updated: %s, connTimeout:%d",
-						Util_convertBdAddr2Str(linkInfo.addr),
-						linkInfo.connTimeout * CONN_TIMEOUT_MS_CONVERSION);
+				// params from peripheral updated
+				paramsSynced = 0x01;
+				Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "*P: %s",
+						Util_convertBdAddr2Str(linkInfo.addr));
 			} else {
 				// Display the address of the connection update failure
 				Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
@@ -1631,10 +1675,15 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
+//			if (paramsSynced == 0x00) {
+//				return; // we're not ready yet
+//			}
+			Util_restartClock(&dataTimeout, DATA_TIMEOUT_PERIOD);
 			// Matt: tricks to remove the need for floats here
 			int32_t SWAkey;
 			memcpy(&SWAkey, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
 			if (SWAkey == SWA_KEY) {
+				isBusy = 0x01;
 				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
 						sizeof(int32_t));
 				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
@@ -1661,7 +1710,6 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				GPIO_write(GPIO_STIM, 0x01); // STIMULATE
 				iNotifData = 0; // stim always precedes storing data
 				Util_startClock(&stimTimeout); // turn off here
-				Util_startClock(&dataTimeout); // reset in case indications fail
 				ATT_HandleValueCfm(pMsg->connHandle); // ack
 			} else {
 				GPIO_write(LED_GREEN, 0x01);
@@ -1679,7 +1727,6 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 				// save SD is blocking on SD card, so it disconnects from peripheral until done
 				if (iNotifData >= SWA_LEN * 2) {
-					Util_stopClock(&dataTimeout); // cancel timer
 					scConnHandle = connList[0].connHandle;
 					SimpleCentral_doDisconnect(0);
 					iNotifData = 0;
@@ -1713,7 +1760,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 					dispHandle = Display_open(Display_Type_LCD, NULL);
 					if (success) {
-						Display_printf(dispHandle, 0, 0, "Success writing %05d",
+						Display_printf(dispHandle, 0, 0, "SD saved %05d",
 								SWAfileCount);
 						SWAfileCount++;
 					} else {
@@ -1721,7 +1768,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					}
 					// !!this should probably depend on experiment state/button
 					Task_sleep(100000);
-					SimpleCentral_doAutoConnect(autoConnect);
+					isBusy = 0x00;
 				}
 				GPIO_write(LED_GREEN, 0x00);
 			}
@@ -1735,8 +1782,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					pMsg->msg.flowCtrlEvt.opcode);
 		} else if (pMsg->method == ATT_MTU_UPDATED_EVENT) {
 			// MTU size updated
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "MTU Size: %d",
-					pMsg->msg.mtuEvt.MTU);
+//			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "MTU Size: %d",
+//					pMsg->msg.mtuEvt.MTU);
 		} else if (discState != BLE_DISC_STATE_IDLE) {
 			SimpleCentral_processGATTDiscEvent(pMsg);
 		}
@@ -1783,32 +1830,32 @@ static void SimpleCentral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg) {
  *          bleIncorrectMode: Aready started
  *          bleNoResources: No resources
  */
-static status_t SimpleCentral_StartRssi(void) {
-	uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);
-
-// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
-	SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-
-// If already running
-	if (connList[connIndex].pRssiClock != NULL) {
-		return bleIncorrectMode;
-	}
-
-// Create a clock object and start
-	connList[connIndex].pRssiClock = (Clock_Struct*) ICall_malloc(
-			sizeof(Clock_Struct));
-
-	if (connList[connIndex].pRssiClock) {
-		Util_constructClock(connList[connIndex].pRssiClock,
-				SimpleCentral_clockHandler,
-				DEFAULT_RSSI_PERIOD, 0, true,
-				(connIndex << 8) | SC_EVT_READ_RSSI);
-	} else {
-		return bleNoResources;
-	}
-
-	return SUCCESS;
-}
+//static status_t SimpleCentral_StartRssi(void) {
+//	uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);
+//
+//// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+//	SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
+//
+//// If already running
+//	if (connList[connIndex].pRssiClock != NULL) {
+//		return bleIncorrectMode;
+//	}
+//
+//// Create a clock object and start
+//	connList[connIndex].pRssiClock = (Clock_Struct*) ICall_malloc(
+//			sizeof(Clock_Struct));
+//
+//	if (connList[connIndex].pRssiClock) {
+//		Util_constructClock(connList[connIndex].pRssiClock,
+//				SimpleCentral_clockHandler,
+//				DEFAULT_RSSI_PERIOD, 0, true,
+//				(connIndex << 8) | SC_EVT_READ_RSSI);
+//	} else {
+//		return bleNoResources;
+//	}
+//
+//	return SUCCESS;
+//}
 
 /*********************************************************************
  * @fn      SimpleCentral_CancelRssi
@@ -1859,12 +1906,12 @@ static void SimpleCentral_processPairState(uint8_t state,
 	uint8_t pairMode = 0;
 
 	if (state == GAPBOND_PAIRING_STATE_STARTED) {
-		Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pairing started");
+		Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pair started");
 	} else if (state == GAPBOND_PAIRING_STATE_COMPLETE) {
 		if (status == SUCCESS) {
 			linkDBInfo_t linkInfo;
 
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pairing success");
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pair success");
 
 			if (linkDB_GetInfo(pPairData->connHandle, &linkInfo) == SUCCESS) {
 				// If the peer was using private address, update with ID address
@@ -1885,7 +1932,7 @@ static void SimpleCentral_processPairState(uint8_t state,
 				}
 			}
 		} else {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pairing fail: %d",
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pair fail: %d",
 					status);
 		}
 
@@ -1896,11 +1943,10 @@ static void SimpleCentral_processPairState(uint8_t state,
 		}
 	} else if (state == GAPBOND_PAIRING_STATE_ENCRYPTED) {
 		if (status == SUCCESS) {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
-					"Encryption success");
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "ENCRYPTED");
 		} else {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
-					"Encryption failed: %d", status);
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "~Encrypted: %d",
+					status);
 		}
 
 		GAPBondMgr_GetParameter(GAPBOND_PAIRING_MODE, &pairMode);
@@ -1910,10 +1956,10 @@ static void SimpleCentral_processPairState(uint8_t state,
 		}
 	} else if (state == GAPBOND_PAIRING_STATE_BOND_SAVED) {
 		if (status == SUCCESS) {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Bond save success");
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Bond saved");
 		} else {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0,
-					"Bond save failed: %d", status);
+			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Bond failed: %d",
+					status);
 		}
 	}
 }
@@ -1946,8 +1992,8 @@ static void SimpleCentral_processPasscode(scPasscodeData_t *pData) {
 static void SimpleCentral_startSvcDiscovery(void) {
 	attExchangeMTUReq_t req;
 
-// Initialize cached handles
-	svcStartHdl = svcEndHdl = 0;
+// Initialize cached handles, not used right now -Matt
+//	svcStartHdl = svcEndHdl = 0;
 
 	discState = BLE_DISC_STATE_MTU;
 	discoveryState = BLE_DISC_STATE_IDLE;
@@ -1960,7 +2006,13 @@ static void SimpleCentral_startSvcDiscovery(void) {
 	VOID GATT_ExchangeMTU(scConnHandle, &req, selfEntity);
 }
 
-// modified from simple_serial_socket_client.c
+/*********************************************************************
+ * @fn      SimpleCentral_processGATTDiscEvent
+ *
+ * @brief   modified from simple_serial_socket_client.c
+ *
+ * @return  none
+ */
 static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
 	uint8_t retVal = SUCCESS;
 
@@ -1971,8 +2023,7 @@ static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
 	if (retVal == SIMPLE_DISCOVERY_SUCCESSFUL) {
 		// Try to enable notifications for the stream
 //        Util_startClock(&startNotiEnableClock);
-
-		discoveryDone = TRUE;
+//		discoveryDone = 0x01;
 	}
 }
 
@@ -2367,11 +2418,41 @@ void SimpleCentral_clockHandler(UArg arg) {
 		break;
 
 	case ES_DATA_TIMEOUT:
-		iNotifData = 0;
+		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		break;
 
-	case ES_MODE_CHECK:
-		GPIO_write(LED_RED, GPIO_read(SWA_MODE));
+	case ES_MODE_LOOP:
+		// START EXPERIMENT
+		if (GPIO_read(SWA_SWITCH) == 0x01 && GPIO_read(SWA_LIGHT) == 0x00) {
+			Util_startClock(&expTimeout);
+		}
+		// STOP EXPERIMENT
+		if (GPIO_read(SWA_SWITCH) == 0x00 && GPIO_read(SWA_LIGHT) == 0x01) {
+			Util_stopClock(&expTimeout);
+			expState = 0x00; // force experiment OFF
+			GPIO_write(LED_RED, expState);
+		}
+		GPIO_write(SWA_LIGHT, GPIO_read(SWA_SWITCH));
+		GPIO_write(LED_RED, expState);
+		break;
+
+	case ES_MODE_ACTIONS:
+		if (expState == 0x01 && numConn == 0x00 && isBusy == 0x00) {
+			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL);
+		}
+		// likely that state recently changed, but need to make sure that
+		// SWA is allowed to finish writing if in progress
+		if (expState == 0x00 && numConn == 0x00 && isBusy == 0x00) {
+			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
+		}
+		break;
+
+	case ES_EXP_TIMEOUT:
+		if (expState == 0x00) {
+			expState = 0x01;
+		} else {
+			expState = 0x00;
+		}
 		break;
 
 	default:
@@ -2465,8 +2546,7 @@ bool SimpleCentral_doAutoConnect(uint8_t index) {
 			}
 			numGroupMembers = 0;
 		}
-		Display_printf(dispHandle, SC_ROW_AC, 0,
-				"AutoConnect enabled: Group ES");
+		Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConn: Group ES");
 		autoConnect = AUTOCONNECT_GROUP_ES;
 	} else {
 		autoConnect = AUTOCONNECT_DISABLE;
@@ -2480,7 +2560,7 @@ bool SimpleCentral_doAutoConnect(uint8_t index) {
 			ICall_free(tempMember);
 		}
 		numGroupMembers = 0;
-		Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConnect disabled");
+		Display_printf(dispHandle, SC_ROW_AC, 0, "AutoConn disabled");
 	}
 	if ((autoConnect) && (MAX_NUM_BLE_CONNS > 8)) {
 		//Disable accepting L2CAP param upadte request
@@ -2650,15 +2730,21 @@ bool SimpleCentral_doSelectConn(uint8_t index) {
 
 	if (connList[index].charHandle == 0) {
 		// Initiate service discovery
-		SimpleCentral_enqueueMsg(SC_EVT_SVC_DISC, 0, NULL);
+		// do we need to discover services? -Matt
+//		SimpleCentral_enqueueMsg(SC_EVT_SVC_DISC, 0, NULL);
 
 		// Diable GATT Read/Write until simple service is found
 //		itemsToDisable = SC_ITEM_GATTREAD | SC_ITEM_GATTWRITE;
 	}
 
 // Set the menu title and go to this connection's context
-	TBM_SET_TITLE(&scMenuPerConn,
-			TBM_GET_ACTION_DESC(&scMenuSelectConn, index));
+	// Matt: this won't work when automated
+//	TBM_SET_TITLE(&scMenuPerConn,
+//			TBM_GET_ACTION_DESC(&scMenuSelectConn, index));
+	uint8_t pAddrTemp[SC_ADDR_STR_SIZE];
+	memcpy(pAddrTemp, Util_convertBdAddr2Str(connList[index].addr),
+						SC_ADDR_STR_SIZE);
+	TBM_SET_TITLE(&scMenuPerConn, pAddrTemp);
 
 // Set RSSI items properly depending on current state
 //	if (connList[index].pRssiClock == NULL) {
@@ -2700,7 +2786,7 @@ bool SimpleCentral_doGattRead(uint8_t index) {
 }
 
 /*********************************************************************
- * @fn      SimpleCentral_enableNotif
+ * @fn      SimpleCentral_enableIndications
  *
  * @brief   Enable Notifications
  *
@@ -2708,7 +2794,7 @@ bool SimpleCentral_doGattRead(uint8_t index) {
  *
  * @return  always true
  */
-bool SimpleCentral_enableNotif(uint8_t index) {
+bool SimpleCentral_enableIndications(uint8_t index) {
 // Process message.
 	attWriteReq_t req;
 	bStatus_t retVal = FAILURE;

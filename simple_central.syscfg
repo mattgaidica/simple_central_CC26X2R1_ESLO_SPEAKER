@@ -31,6 +31,7 @@ const GPIO3       = GPIO.addInstance();
 const GPIO4       = GPIO.addInstance();
 const GPIO5       = GPIO.addInstance();
 const GPIO6       = GPIO.addInstance();
+const GPIO11      = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
@@ -99,6 +100,7 @@ GPIO2.pinInstance.$name = "CONFIG_PIN_BTN2";
 
 GPIO3.$hardware         = system.deviceData.board.components.LED_RED;
 GPIO3.$name             = "LED_RED";
+GPIO3.outputStrength    = "Low";
 GPIO3.pinInstance.$name = "CONFIG_PIN_0";
 
 GPIO4.$hardware         = system.deviceData.board.components.LED_GREEN;
@@ -111,10 +113,16 @@ GPIO5.outputStrength    = "High";
 GPIO5.gpioPin.$assign   = "boosterpack.24";
 GPIO5.pinInstance.$name = "CONFIG_PIN_2";
 
-GPIO6.$name             = "SWA_MODE";
 GPIO6.pull              = "Pull Up";
+GPIO6.$name             = "SWA_SWITCH";
 GPIO6.gpioPin.$assign   = "boosterpack.23";
 GPIO6.pinInstance.$name = "CONFIG_PIN_11";
+
+GPIO11.$name              = "SWA_LIGHT";
+GPIO11.mode               = "Output";
+GPIO11.initialOutputState = "High";
+GPIO11.gpioPin.$assign    = "boosterpack.19";
+GPIO11.pinInstance.$name  = "CONFIG_PIN_13";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";

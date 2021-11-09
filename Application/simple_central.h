@@ -114,8 +114,8 @@ bool SimpleCentral_doGattRead(uint8_t index);
 /* Action for Menu: GATT Write */
 bool SimpleCentral_doGattWrite(uint8_t index);
 
-/* Action: Enable Notification */
-bool SimpleCentral_enableNotif(uint8_t index);
+/* Action: Enable Indications */
+bool SimpleCentral_enableIndications(uint8_t index);
 
 /* Action for Menu: Start/Stop RSSI Read */
 bool SimpleCentral_doRssiRead(uint8_t index);
