@@ -131,6 +131,7 @@
 #define ES_EXP_TIMEOUT			   0x0F
 #define ES_RESET_EXPERIMENT		   0x10
 #define ES_DO_AUTOCONNECT		   0x11
+#define ES_ENABLE_INDICATIONS	   0x12
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -381,7 +382,7 @@ simpleService_t streamServiceHandle = {
 				.handle = GATT_INVALID_HANDLE, .cccdHandle =
 				GATT_INVALID_HANDLE, }, }, };
 // Discovery done
-//static uint8_t discoveryDone = 0x00;
+static uint8_t discoveryDone = 0x00;
 
 // Discovered service start and end handle, deprecated -Matt
 //static uint16_t svcStartHdl = 0;
@@ -438,6 +439,7 @@ static Clock_Struct clkSwaActions;
 static Clock_Struct stimTimeout;
 static Clock_Struct dataTimeout;
 static Clock_Struct expTimeout;
+static Clock_Struct indicationClk;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -809,6 +811,9 @@ static void SimpleCentral_init(void) {
 
 	Util_constructClock(&expTimeout, SimpleCentral_clockHandler, 100,
 	EXP_PERIOD, false, ES_EXP_TIMEOUT);
+
+	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
+			false, ES_ENABLE_INDICATIONS);
 }
 
 /*********************************************************************
@@ -1242,6 +1247,11 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 		break;
 	}
 
+	case ES_ENABLE_INDICATIONS: {
+		SimpleCentral_enableIndications(0);
+		break;
+	}
+
 	default:
 		// Do nothing.
 		break;
@@ -1444,7 +1454,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 
 		SimpleCentral_doSelectConn(connIndex); // ESLO Speaker -Matt
-		SimpleCentral_enableIndications(0);
+		SimpleCentral_startSvcDiscovery(); // fills cccd for indication stream
 		break;
 	}
 
@@ -1479,6 +1489,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		// Cancel timers
 		SimpleCentral_CancelRssi(connHandle);
 		Util_stopClock(&dataTimeout); // cancel clock
+		discoveryDone = 0x00;
 		// if peripheral drops out mid-stim/indication
 		if (isBusy == 0x01) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
@@ -1856,7 +1867,6 @@ static void SimpleCentral_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg) {
 //
 //	return SUCCESS;
 //}
-
 /*********************************************************************
  * @fn      SimpleCentral_CancelRssi
  *
@@ -2021,9 +2031,9 @@ static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
 
 // If all handles is populated or the discovery is complete
 	if (retVal == SIMPLE_DISCOVERY_SUCCESSFUL) {
-		// Try to enable notifications for the stream
-//        Util_startClock(&startNotiEnableClock);
-//		discoveryDone = 0x01;
+		// Try to enable indications for the stream
+		Util_startClock(&indicationClk);
+		discoveryDone = 0x01;
 	}
 }
 
@@ -2455,6 +2465,10 @@ void SimpleCentral_clockHandler(UArg arg) {
 		}
 		break;
 
+	case ES_ENABLE_INDICATIONS:
+		SimpleCentral_enqueueMsg(ES_ENABLE_INDICATIONS, 0, NULL);
+		break;
+
 	default:
 		break;
 	}
@@ -2743,7 +2757,7 @@ bool SimpleCentral_doSelectConn(uint8_t index) {
 //			TBM_GET_ACTION_DESC(&scMenuSelectConn, index));
 	uint8_t pAddrTemp[SC_ADDR_STR_SIZE];
 	memcpy(pAddrTemp, Util_convertBdAddr2Str(connList[index].addr),
-						SC_ADDR_STR_SIZE);
+	SC_ADDR_STR_SIZE);
 	TBM_SET_TITLE(&scMenuPerConn, pAddrTemp);
 
 // Set RSSI items properly depending on current state
@@ -2788,7 +2802,7 @@ bool SimpleCentral_doGattRead(uint8_t index) {
 /*********************************************************************
  * @fn      SimpleCentral_enableIndications
  *
- * @brief   Enable Notifications
+ * @brief   Enable Indications
  *
  * @param   index - NOT USED
  *

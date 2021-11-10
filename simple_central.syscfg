@@ -31,7 +31,7 @@ const GPIO3       = GPIO.addInstance();
 const GPIO4       = GPIO.addInstance();
 const GPIO5       = GPIO.addInstance();
 const GPIO6       = GPIO.addInstance();
-const GPIO11      = GPIO.addInstance();
+const GPIO7       = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const Power       = scripting.addModule("/ti/drivers/Power");
@@ -51,8 +51,9 @@ ble.deviceRole                         = "CENTRAL_CFG";
 ble.lockProject                        = true;
 ble.bondPairing                        = "GAPBOND_PAIRING_MODE_INITIATE";
 ble.maxConnNum                         = 1;
-ble.randomAddress                      = "BA:BA:BA:00:00:00";
 ble.deviceName                         = "ESLO_BASE";
+ble.addressMode                        = "ADDRMODE_RANDOM";
+ble.randomAddress                      = "E0:E0:E0:E0:E0:E0";
 ble.radioConfig.codeExportConfig.$name = "ti_devices_radioconfig_code_export_param0";
 ble.connUpdateParamsCentral.$name      = "ti_ble5stack_general_ble_conn_update_params0";
 
@@ -118,11 +119,11 @@ GPIO6.$name             = "SWA_SWITCH";
 GPIO6.gpioPin.$assign   = "boosterpack.23";
 GPIO6.pinInstance.$name = "CONFIG_PIN_11";
 
-GPIO11.$name              = "SWA_LIGHT";
-GPIO11.mode               = "Output";
-GPIO11.initialOutputState = "High";
-GPIO11.gpioPin.$assign    = "boosterpack.19";
-GPIO11.pinInstance.$name  = "CONFIG_PIN_13";
+GPIO7.$name              = "SWA_LIGHT";
+GPIO7.mode               = "Output";
+GPIO7.initialOutputState = "High";
+GPIO7.gpioPin.$assign    = "boosterpack.19";
+GPIO7.pinInstance.$name  = "CONFIG_PIN_13";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
