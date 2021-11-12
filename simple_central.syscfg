@@ -41,6 +41,7 @@ const SD          = scripting.addModule("/ti/drivers/SD", {}, false);
 const SD1         = SD.addInstance();
 const SPI         = scripting.addModule("/ti/drivers/SPI", {}, false);
 const SPI1        = SPI.addInstance();
+const SPI2        = SPI.addInstance();
 const TRNG        = scripting.addModule("/ti/drivers/TRNG");
 const TRNG1       = TRNG.addInstance();
 
@@ -143,6 +144,12 @@ SPI1.sclkPinInstance.$name = "CONFIG_PIN_8";
 SPI1.misoPinInstance.$name = "CONFIG_PIN_9";
 SPI1.mosiPinInstance.$name = "CONFIG_PIN_10";
 
+SPI2.$name                 = "SPI_LED";
+SPI2.spi.mosiPin.$assign   = "boosterpack.30";
+SPI2.sclkPinInstance.$name = "CONFIG_PIN_14";
+SPI2.misoPinInstance.$name = "CONFIG_PIN_15";
+SPI2.mosiPinInstance.$name = "CONFIG_PIN_16";
+
 TRNG1.$name = "CONFIG_TRNG_0";
 
 /**
@@ -154,8 +161,8 @@ Display1.lcdEnable.gpioPin.$suggestSolution = "boosterpack.5";
 Display1.lcdPower.gpioPin.$suggestSolution  = "boosterpack.2";
 Display1.lcdSS.gpioPin.$suggestSolution     = "boosterpack.6";
 Display2.uart.uart.$suggestSolution         = "UART1";
-Display2.uart.uart.txPin.$suggestSolution   = "boosterpack.30";
-Display2.uart.uart.rxPin.$suggestSolution   = "boosterpack.29";
+Display2.uart.uart.txPin.$suggestSolution   = "boosterpack.32";
+Display2.uart.uart.rxPin.$suggestSolution   = "boosterpack.11";
 GPIO1.gpioPin.$suggestSolution              = "boosterpack.13";
 GPIO2.gpioPin.$suggestSolution              = "boosterpack.12";
 GPIO3.gpioPin.$suggestSolution              = "boosterpack.39";
@@ -167,3 +174,8 @@ SPI1.spi.misoPin.$suggestSolution           = "boosterpack.14";
 SPI1.spi.mosiPin.$suggestSolution           = "boosterpack.15";
 SPI1.spi.dmaRxChannel.$suggestSolution      = "DMA_CH3";
 SPI1.spi.dmaTxChannel.$suggestSolution      = "DMA_CH4";
+SPI2.spi.$suggestSolution                   = "SSI1";
+SPI2.spi.sclkPin.$suggestSolution           = "boosterpack.10";
+SPI2.spi.misoPin.$suggestSolution           = "boosterpack.9";
+SPI2.spi.dmaRxChannel.$suggestSolution      = "DMA_CH16";
+SPI2.spi.dmaTxChannel.$suggestSolution      = "DMA_CH17";

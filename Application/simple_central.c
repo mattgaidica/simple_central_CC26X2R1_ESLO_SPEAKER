@@ -1,47 +1,6 @@
 /******************************************************************************
 
  @file  simple_central.c
-
- @brief This file contains the Simple Central sample application for use
- with the CC2650 Bluetooth Low Energy Protocol Stack.
-
- Group: WCS, BTS
- Target Device: cc13x2_26x2
-
- ******************************************************************************
- 
- Copyright (c) 2013-2021, Texas Instruments Incorporated
- All rights reserved.
-
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
-
- *  Redistributions of source code must retain the above copyright
- notice, this list of conditions and the following disclaimer.
-
- *  Redistributions in binary form must reproduce the above copyright
- notice, this list of conditions and the following disclaimer in the
- documentation and/or other materials provided with the distribution.
-
- *  Neither the name of Texas Instruments Incorporated nor the names of
- its contributors may be used to endorse or promote products derived
- from this software without specific prior written permission.
-
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
- ******************************************************************************
- 
  
  *****************************************************************************/
 
@@ -94,7 +53,8 @@
 #include "simple_central.h"
 #include "simple_central_menu.h"
 
-#include "eslo.h"
+#include "SK6812RGBW.h" // LED strip
+#include "ESLO.h"
 
 /*********************************************************************
  * MACROS
@@ -107,6 +67,9 @@
 /*********************************************************************
  * CONSTANTS
  */
+
+#define NLED 			10 // count up to 2^10=1024
+#define LED_BUF_LEN 	32 * NLED
 
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
@@ -499,6 +462,11 @@ static void SimpleServiceDiscovery_processFindInfoRsp(attFindInfoRsp_t rsp,
 
 int32_t fatfs_getFatTime(void);
 void resetExperiment();
+void sendBytes(uint8_t *Bufp, uint32_t len);
+SPI_Handle LED_SPI_Init(uint8_t _index);
+
+SPI_Handle LED_SPI;
+uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -517,6 +485,54 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 /*********************************************************************
  * PUBLIC FUNCTIONS
  */
+void initLEDs() {
+	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
+		uint32_t bitPattern = 1 << iLED;
+		buildLedBitPattern(1, 0, 0, 0, RGBW, NLED, bitPattern);
+		sendBytes(RGBW, LED_BUF_LEN);
+		Task_sleep(1000);
+	}
+	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
+		uint32_t bitPattern = 1 << (NLED - iLED);
+		buildLedBitPattern(0, 1, 0, 0, RGBW, NLED, bitPattern);
+		sendBytes(RGBW, LED_BUF_LEN);
+		Task_sleep(1000);
+	}
+	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
+		uint32_t bitPattern = 1 << iLED;
+		buildLedBitPattern(0, 0, 1, 0, RGBW, NLED, bitPattern);
+		sendBytes(RGBW, LED_BUF_LEN);
+		Task_sleep(1000);
+	}
+	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
+		uint32_t bitPattern = 1 << (NLED - iLED);
+		buildLedBitPattern(0, 0, 0, 1, RGBW, NLED, bitPattern);
+		sendBytes(RGBW, LED_BUF_LEN);
+		Task_sleep(1000);
+	}
+
+	buildLedBitPattern(0, 0, 0, 0, RGBW, NLED, 0);
+	sendBytes(RGBW, LED_BUF_LEN);
+}
+
+SPI_Handle LED_SPI_Init(uint8_t _index) {
+	SPI_Handle SPI_handle;
+	SPI_Params spiParams;
+	SPI_Params_init(&spiParams);
+	spiParams.bitRate = 8000000; // up to 10,000,000
+	spiParams.frameFormat = SPI_POL0_PHA0;
+	SPI_handle = SPI_open(_index, &spiParams);
+	return SPI_handle;
+}
+
+void sendBytes(uint8_t *Bufp, uint32_t len) {
+	SPI_Transaction transaction;
+
+	transaction.count = len;
+	transaction.rxBuf = NULL;
+	transaction.txBuf = (void*) Bufp;
+	SPI_transfer(LED_SPI, &transaction);
+}
 
 void resetExperiment() {
 	isBusy = 0x00;
@@ -789,6 +805,10 @@ static void SimpleCentral_init(void) {
 	}
 	GPIO_write(SWA_LIGHT, 0x00); // shutdown because its read as a mode later
 
+//	SPI_init();
+	LED_SPI = LED_SPI_Init(SPI_LED);
+	initLEDs();
+
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
 // Initialize Two-button Menu
@@ -813,7 +833,7 @@ static void SimpleCentral_init(void) {
 	EXP_PERIOD, false, ES_EXP_TIMEOUT);
 
 	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
-			false, ES_ENABLE_INDICATIONS);
+	false, ES_ENABLE_INDICATIONS);
 }
 
 /*********************************************************************
@@ -1758,8 +1778,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 						dst = fopen(saveFile, "w");
 						if (dst) {
 							unsigned int numel = fwrite(swaBuffer,
-									sizeof(int32_t),
-									SWA_LEN * 2, dst);
+									sizeof(int32_t), SWA_LEN * 2, dst);
 							if (numel == SWA_LEN * 2) {
 								success = 0x01;
 							}
@@ -1773,6 +1792,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					if (success) {
 						Display_printf(dispHandle, 0, 0, "SD saved %05d",
 								SWAfileCount);
+						buildLedBitPattern(1, 0, 0, 0, RGBW, NLED, SWAfileCount);
+						sendBytes(RGBW, LED_BUF_LEN);
 						SWAfileCount++;
 					} else {
 						Display_printf(dispHandle, 0, 0, "Error with SD Card.");

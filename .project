@@ -32,6 +32,16 @@
 			<locationURI>COM_TI_SIMPLELINK_CC13X2_26X2_SDK_INSTALL_DIR/source/ti/boards/CC26X2R1_LAUNCHXL/Board.html</locationURI>
 		</link>
 		<link>
+			<name>ESLO</name>
+			<type>2</type>
+			<locationURI>PARENT-4-PROJECT_LOC/Documents/Software/ESLO-Libraries/ESLO</locationURI>
+		</link>
+		<link>
+			<name>SK6812RGBW</name>
+			<type>2</type>
+			<locationURI>PARENT-4-PROJECT_LOC/Documents/Software/ESLO-Libraries/SK6812RGBW</locationURI>
+		</link>
+		<link>
 			<name>Application/board_key.c</name>
 			<type>1</type>
 			<locationURI>COM_TI_SIMPLELINK_CC13X2_26X2_SDK_INSTALL_DIR/source/ti/ble5stack/common/cc26xx/board_key.c</locationURI>
