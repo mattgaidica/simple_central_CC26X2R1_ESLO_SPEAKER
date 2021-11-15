@@ -24,6 +24,7 @@
 #include <ti/display/Display.h>
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/SDFatFS.h>
+#include <ti/drivers/NVS.h>
 
 //// CMSIS Math
 //#include "arm_math.h"
@@ -68,8 +69,10 @@
  * CONSTANTS
  */
 
+#define NVS_KEY_LOC		0x2000 // sector 0:
 #define NLED 			10 // count up to 2^10=1024
 #define LED_BUF_LEN 	32 * NLED
+#define R_LED_INT 		0x80
 
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
@@ -344,8 +347,6 @@ simpleService_t streamServiceHandle = {
 				.uuid = { ATT_BT_UUID_SIZE, SimpleStreamServer_DataInUUID },
 				.handle = GATT_INVALID_HANDLE, .cccdHandle =
 				GATT_INVALID_HANDLE, }, }, };
-// Discovery done
-static uint8_t discoveryDone = 0x00;
 
 // Discovered service start and end handle, deprecated -Matt
 //static uint16_t svcStartHdl = 0;
@@ -391,7 +392,7 @@ uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
 int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 uint32_t absoluteTime;
-uint16_t SWAfileCount = 0;
+uint32_t SWAfileCount = 1; // start at 1 so display is never off
 uint8_t sd_online = 0x00;
 uint8_t expState = 0x00;
 uint8_t isBusy = 0x00;
@@ -467,6 +468,10 @@ SPI_Handle LED_SPI_Init(uint8_t _index);
 
 SPI_Handle LED_SPI;
 uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
+char saveFile[15] = "";
+
+NVS_Handle nvsHandle;
+uint8_t NVS_KEY = 0xAA;
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -485,30 +490,52 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 /*********************************************************************
  * PUBLIC FUNCTIONS
  */
+
+void getNVS(uint32_t *fileCount, uint8_t *nvsKey) {
+	uint8_t readBuf[5];
+	nvsHandle = NVS_open(CONFIG_NVS_0, NULL);
+	if (nvsHandle) {
+		NVS_read(nvsHandle, 0, (void*) readBuf, 5);
+		NVS_close(nvsHandle);
+		if (nvsKey != NULL) {
+			memcpy(nvsKey, readBuf, sizeof(uint8_t));
+		}
+		if (fileCount != NULL) {
+			memcpy(fileCount, readBuf + 1, sizeof(uint32_t));
+		}
+	}
+}
+void setNVS(uint32_t fileCount, uint8_t nvsKey) {
+	uint8_t writeBuf[5];
+	memcpy(writeBuf, &nvsKey, sizeof(uint8_t));
+	memcpy(writeBuf + 1, &fileCount, sizeof(uint32_t));
+	nvsHandle = NVS_open(CONFIG_NVS_0, NULL);
+	if (nvsHandle) {
+		NVS_write(nvsHandle, 0, (void*) writeBuf, 5,
+		NVS_WRITE_ERASE | NVS_WRITE_POST_VERIFY);
+		NVS_close(nvsHandle);
+	}
+}
+
+void speakerFilename(char *nameBuf, uint32_t iName) {
+	sprintf(nameBuf, "fat:%i:%05d.bin",
+	DRIVE_NUM, iName);
+}
+
 void initLEDs() {
-	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
-		uint32_t bitPattern = 1 << iLED;
-		buildLedBitPattern(1, 0, 0, 0, RGBW, NLED, bitPattern);
-		sendBytes(RGBW, LED_BUF_LEN);
-		Task_sleep(1000);
-	}
-	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
-		uint32_t bitPattern = 1 << (NLED - iLED);
-		buildLedBitPattern(0, 1, 0, 0, RGBW, NLED, bitPattern);
-		sendBytes(RGBW, LED_BUF_LEN);
-		Task_sleep(1000);
-	}
-	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
-		uint32_t bitPattern = 1 << iLED;
-		buildLedBitPattern(0, 0, 1, 0, RGBW, NLED, bitPattern);
-		sendBytes(RGBW, LED_BUF_LEN);
-		Task_sleep(1000);
-	}
-	for (uint8_t iLED = 0; iLED < NLED; iLED++) {
-		uint32_t bitPattern = 1 << (NLED - iLED);
-		buildLedBitPattern(0, 0, 0, 1, RGBW, NLED, bitPattern);
-		sendBytes(RGBW, LED_BUF_LEN);
-		Task_sleep(1000);
+	uint32_t bitPattern = 1;
+	for (uint32_t iColor = 1; iColor < 5; iColor++) {
+		for (uint8_t iLED = 0; iLED < NLED; iLED++) {
+			if ((iColor - 1) % 2 == 0) {
+				bitPattern = 1 << iLED;
+			} else {
+				bitPattern = bitPattern >> 1;
+			}
+			buildLedBitPattern(iColor == 1, iColor == 2, iColor == 3,
+					iColor == 4, RGBW, NLED, bitPattern);
+			sendBytes(RGBW, LED_BUF_LEN);
+			Task_sleep(5000);
+		}
 	}
 
 	buildLedBitPattern(0, 0, 0, 0, RGBW, NLED, 0);
@@ -763,51 +790,69 @@ static void SimpleCentral_init(void) {
 // Initialize GAP layer for Central role and register to receive GAP events
 	GAP_DeviceInit(GAP_PROFILE_CENTRAL, selfEntity, addrMode, &pRandomAddress);
 
+	// has NVS ever been written to?
+	NVS_init();
+
+	uint8_t nvsKey = 0;
+	getNVS(&SWAfileCount, &nvsKey);
+	if (nvsKey != NVS_KEY) { // establish new NVS key, dont trust NVS SWAfileCount
+		setNVS(0, NVS_KEY); // init
+		SWAfileCount = 1; // the next file to write
+	}
+
 	SDFatFS_init();
 	/* add_device() should be called once and is used for all media types */
 	add_device(fatfsPrefix, _MSA, ffcio_open, ffcio_close, ffcio_read,
 			ffcio_write, ffcio_lseek, ffcio_unlink, ffcio_rename);
-	char saveFile[13] = "";
-	sprintf(saveFile, "fat:%i:init.txt",
+	char initFile[13] = "";
+	sprintf(initFile, "fat:%i:init.txt",
 	DRIVE_NUM);
 
 	/* Variables for the CIO functions */
-	FILE *dst;
+	FILE *wdst, *rdst;
 
 	sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
 	if (sdfatfsHandle) {
-		dst = fopen(saveFile, "w");
-		if (dst) {
+		wdst = fopen(initFile, "w");
+		if (wdst) {
 			char initString[6] = "ONLINE";
-			unsigned int numel = fwrite(initString, 1, 6, dst);
+			unsigned int numel = fwrite(initString, 1, 6, wdst);
 			if (numel == 6) {
 				sd_online = 0x01;
 			}
-			fflush(dst);
-			fclose(dst);
+			fflush(wdst);
+			fclose(wdst);
+			// find last file
+			if (nvsKey == NVS_KEY) { // see if all files have been deleted
+				speakerFilename(saveFile, SWAfileCount);
+				rdst = fopen(saveFile, "r");
+				if (rdst) {
+					SWAfileCount++; // increment but only save to NVS at fwrite
+					fclose(rdst);
+				} else {
+					SWAfileCount = 1; // re-init, again- only save to NVS at fwrite
+				}
+			}
 		}
 		SDFatFS_close(sdfatfsHandle);
 	}
+
+	//	SPI_init();
+	LED_SPI = LED_SPI_Init(SPI_LED);
+	initLEDs();
+
+	buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW, NLED, SWAfileCount);
+	sendBytes(RGBW, LED_BUF_LEN);
 
 	dispHandle = Display_open(Display_Type_LCD, NULL); //Display_Type_ANY, NULL);
 
 	if (sd_online == 0x00) {
 		while (1) {
 			Display_printf(dispHandle, 0, 0, "Reset SD card.");
-			GPIO_write(LED_RED, 0x00);
-			Task_sleep(50000);
-			GPIO_write(LED_RED, 0x01);
-			Task_sleep(50000);
+			Task_sleep(100000);
 		}
-	} else {
-		Display_printf(dispHandle, 0, 0, "SD card online...");
-		Task_sleep(100000);
 	}
 	GPIO_write(SWA_LIGHT, 0x00); // shutdown because its read as a mode later
-
-//	SPI_init();
-	LED_SPI = LED_SPI_Init(SPI_LED);
-	initLEDs();
 
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
@@ -1261,9 +1306,10 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 	}
 
 	case ES_DO_AUTOCONNECT: {
-//		SimpleCentral_doAutoConnect(autoConnect);
-		// -> GAP_LINK_ESTABLISHED_EVENT: SimpleCentral_doSelectConn(), SimpleCentral_enableIndications()
+		// SimpleCentral_doAutoConnect(autoConnect);
 		SimpleCentral_doDiscoverDevices(0);
+		// -> GAP_LINK_ESTABLISHED_EVENT: SimpleCentral_doSelectConn() + SimpleCentral_startSvcDiscovery()
+		// Util_startClock(&indicationClk) -> ES_ENABLE_INDICATIONS -> SimpleCentral_enableIndications()
 		break;
 	}
 
@@ -1509,7 +1555,6 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		// Cancel timers
 		SimpleCentral_CancelRssi(connHandle);
 		Util_stopClock(&dataTimeout); // cancel clock
-		discoveryDone = 0x00;
 		// if peripheral drops out mid-stim/indication
 		if (isBusy == 0x01) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
@@ -1763,9 +1808,6 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					iNotifData = 0;
 
 					// write SWA buffer, dominantFreq, and phaseAngle to memory
-					char saveFile[15] = "";
-					sprintf(saveFile, "fat:%i:%05d.bin",
-					DRIVE_NUM, SWAfileCount);
 
 					/* Variables for the CIO functions */
 					FILE *dst;
@@ -1774,6 +1816,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 					Display_close(dispHandle);
 					sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
+					speakerFilename(saveFile, SWAfileCount);
 					if (sdfatfsHandle) {
 						dst = fopen(saveFile, "w");
 						if (dst) {
@@ -1792,9 +1835,12 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					if (success) {
 						Display_printf(dispHandle, 0, 0, "SD saved %05d",
 								SWAfileCount);
-						buildLedBitPattern(1, 0, 0, 0, RGBW, NLED, SWAfileCount);
-						sendBytes(RGBW, LED_BUF_LEN);
+						setNVS(SWAfileCount, NVS_KEY); // save file that wrote
 						SWAfileCount++;
+						// display file that would be writing
+						buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW, NLED,
+								SWAfileCount);
+						sendBytes(RGBW, LED_BUF_LEN);
 					} else {
 						Display_printf(dispHandle, 0, 0, "Error with SD Card.");
 					}
@@ -2054,7 +2100,6 @@ static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
 	if (retVal == SIMPLE_DISCOVERY_SUCCESSFUL) {
 		// Try to enable indications for the stream
 		Util_startClock(&indicationClk);
-		discoveryDone = 0x01;
 	}
 }
 
