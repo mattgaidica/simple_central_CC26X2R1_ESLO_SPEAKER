@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 /* POSIX Header files */
 #include <pthread.h>
@@ -68,16 +69,17 @@
 /*********************************************************************
  * CONSTANTS
  */
-
-#define NVS_KEY_LOC		0x2000 // sector 0:
-#define NLED 			10 // count up to 2^10=1024
-#define LED_BUF_LEN 	32 * NLED
-#define R_LED_INT 		0x80
-
+#define TARGET_PHASE			270
+#define TRIAL_VAR_LEN			6
+#define SHAM_EVERYISH			NULL
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
 #define EXP_PERIOD				30000 // ms
+
+#define NLED 			10 // counts up to 2^10=1024 trials
+#define LED_BUF_LEN 	32 * NLED
+#define R_LED_INT 		0x80
 
 // Application events
 #define SC_EVT_KEY_CHANGE          0x01
@@ -390,9 +392,9 @@ SDFatFS_Handle sdfatfsHandle;
 
 uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
-int32_t dominantFreq, phaseAngle; // float values * 1000 on peripheral (i.e. mHz)
-uint32_t absoluteTime;
+int32_t dominantFreq, phaseAngle, msToStim, targetPhaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 uint32_t SWAfileCount = 1; // start at 1 so display is never off
+uint32_t SWATrial = 0;
 uint8_t sd_online = 0x00;
 uint8_t expState = 0x00;
 uint8_t isBusy = 0x00;
@@ -465,6 +467,11 @@ int32_t fatfs_getFatTime(void);
 void resetExperiment();
 void sendBytes(uint8_t *Bufp, uint32_t len);
 SPI_Handle LED_SPI_Init(uint8_t _index);
+void speakerFilename(char *nameBuf, uint32_t iName);
+void initLEDs();
+void getNVS(uint32_t *fileCount, uint8_t *nvsKey);
+void setNVS(uint32_t fileCount, uint8_t nvsKey);
+uint8_t setSham();
 
 SPI_Handle LED_SPI;
 uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
@@ -472,6 +479,7 @@ char saveFile[15] = "";
 
 NVS_Handle nvsHandle;
 uint8_t NVS_KEY = 0xAA;
+uint8_t doSham = 0x00;
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -490,6 +498,16 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 /*********************************************************************
  * PUBLIC FUNCTIONS
  */
+
+uint8_t setSham() {
+	uint8_t shamCond;
+	if (SHAM_EVERYISH == NULL) {
+		shamCond = 0x00;
+	} else {
+		shamCond = (rand() % SHAM_EVERYISH) == 0;
+	}
+	return (shamCond);
+}
 
 void getNVS(uint32_t *fileCount, uint8_t *nvsKey) {
 	uint8_t readBuf[5];
@@ -790,15 +808,17 @@ static void SimpleCentral_init(void) {
 // Initialize GAP layer for Central role and register to receive GAP events
 	GAP_DeviceInit(GAP_PROFILE_CENTRAL, selfEntity, addrMode, &pRandomAddress);
 
+	time_t t;
+	srand((unsigned) time(&t));
+
 	// has NVS ever been written to?
 	NVS_init();
-
 	uint8_t nvsKey = 0;
-	getNVS(&SWAfileCount, &nvsKey);
-	if (nvsKey != NVS_KEY) { // establish new NVS key, dont trust NVS SWAfileCount
-		setNVS(0, NVS_KEY); // init
-		SWAfileCount = 1; // the next file to write
-	}
+//	getNVS(&SWAfileCount, &nvsKey);
+//	if (nvsKey != NVS_KEY) { // establish new NVS key, dont trust NVS SWAfileCount
+//		setNVS(0, NVS_KEY); // init
+//		SWAfileCount = 1; // the next file to write
+//	}
 
 	SDFatFS_init();
 	/* add_device() should be called once and is used for all media types */
@@ -823,16 +843,16 @@ static void SimpleCentral_init(void) {
 			fflush(wdst);
 			fclose(wdst);
 			// find last file
-			if (nvsKey == NVS_KEY) { // see if all files have been deleted
-				speakerFilename(saveFile, SWAfileCount);
-				rdst = fopen(saveFile, "r");
-				if (rdst) {
-					SWAfileCount++; // increment but only save to NVS at fwrite
-					fclose(rdst);
-				} else {
-					SWAfileCount = 1; // re-init, again- only save to NVS at fwrite
-				}
-			}
+//			if (nvsKey == NVS_KEY) { // see if all files have been deleted
+//				speakerFilename(saveFile, SWAfileCount);
+//				rdst = fopen(saveFile, "r");
+//				if (rdst) {
+//					SWAfileCount++; // increment but only save to NVS at fwrite
+//					fclose(rdst);
+//				} else {
+//					SWAfileCount = 1; // re-init, again- only save to NVS at fwrite
+//				}
+//			}
 		}
 		SDFatFS_close(sdfatfsHandle);
 	}
@@ -841,7 +861,7 @@ static void SimpleCentral_init(void) {
 	LED_SPI = LED_SPI_Init(SPI_LED);
 	initLEDs();
 
-	buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW, NLED, SWAfileCount);
+	buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW, NLED, SWATrial);
 	sendBytes(RGBW, LED_BUF_LEN);
 
 	dispHandle = Display_open(Display_Type_LCD, NULL); //Display_Type_ANY, NULL);
@@ -1756,18 +1776,23 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 //			}
 			Util_restartClock(&dataTimeout, DATA_TIMEOUT_PERIOD);
 			// Matt: tricks to remove the need for floats here
-			int32_t SWAkey;
-			memcpy(&SWAkey, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
-			if (SWAkey == SWA_KEY) {
+			uint32_t swaKey;
+			memcpy(&swaKey, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
+			if (swaKey == SWA_KEY) {
 				isBusy = 0x01;
 				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
 						sizeof(int32_t));
 				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
 						sizeof(int32_t));
-				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue + 12,
+				memcpy(&SWATrial, pMsg->msg.handleValueInd.pValue + 12,
 						sizeof(int32_t));
 
-				int32_t targetPhaseAngle = 0 * 1000; // 0 <= target < 360
+				// this will make the bit pattern present at least for a second for first trials
+				buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
+				NLED, SWATrial);
+				sendBytes(RGBW, LED_BUF_LEN);
+
+				targetPhaseAngle = TARGET_PHASE * 1000; // 0 <= target < 360
 				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
 
 				if (remainingPhase < 0) {
@@ -1775,15 +1800,16 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				} else {
 					remainingPhase = (360 * 1000) - remainingPhase;
 				}
-				int32_t msToStim =
-						(1000 * remainingPhase / (360 * dominantFreq));
+				msToStim = (1000 * remainingPhase / (360 * dominantFreq));
 				// !! handle BLE latency
 				if (msToStim < 0 | msToStim > 3000) {
 					return; // invalid, return and pretend STIM was never indicated
 				}
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
+				if (doSham == 0x00) {
+					GPIO_write(GPIO_STIM, 0x01); // STIMULATE
+				}
 				GPIO_write(LED_GREEN, 0x01); // STIMULATE indicator
-				GPIO_write(GPIO_STIM, 0x01); // STIMULATE
 				iNotifData = 0; // stim always precedes storing data
 				Util_startClock(&stimTimeout); // turn off here
 				ATT_HandleValueCfm(pMsg->connHandle); // ack
@@ -1815,14 +1841,21 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					uint8_t success = 0x00;
 
 					Display_close(dispHandle);
-					sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
-					speakerFilename(saveFile, SWAfileCount);
+					sdfatfsHandle = SDFatFS_open(CONFIG_SD_0,
+					DRIVE_NUM);
+					speakerFilename(saveFile, SWATrial);
 					if (sdfatfsHandle) {
 						dst = fopen(saveFile, "w");
 						if (dst) {
 							unsigned int numel = fwrite(swaBuffer,
 									sizeof(int32_t), SWA_LEN * 2, dst);
-							if (numel == SWA_LEN * 2) {
+
+							int32_t trialVars[TRIAL_VAR_LEN] = {
+									(int32_t) doSham, dominantFreq, phaseAngle,
+									SWATrial, msToStim, targetPhaseAngle };
+							numel += fwrite(trialVars, sizeof(uint32_t),
+							TRIAL_VAR_LEN, dst);
+							if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
 								success = 0x01;
 							}
 							fflush(dst);
@@ -1834,17 +1867,18 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					dispHandle = Display_open(Display_Type_LCD, NULL);
 					if (success) {
 						Display_printf(dispHandle, 0, 0, "SD saved %05d",
-								SWAfileCount);
-						setNVS(SWAfileCount, NVS_KEY); // save file that wrote
-						SWAfileCount++;
+								SWATrial);
+//						setNVS(SWAfileCount, NVS_KEY); // save file that wrote
+						SWATrial++;
 						// display file that would be writing
-						buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW, NLED,
-								SWAfileCount);
+						buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
+						NLED, SWATrial);
 						sendBytes(RGBW, LED_BUF_LEN);
 					} else {
 						Display_printf(dispHandle, 0, 0, "Error with SD Card.");
 					}
 					// !!this should probably depend on experiment state/button
+					doSham = setSham(); // for next trial
 					Task_sleep(100000);
 					isBusy = 0x00;
 				}
@@ -1990,11 +2024,13 @@ static void SimpleCentral_processPairState(uint8_t state,
 
 			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Pair success");
 
-			if (linkDB_GetInfo(pPairData->connHandle, &linkInfo) == SUCCESS) {
+			if (linkDB_GetInfo(pPairData->connHandle,
+					&linkInfo) == SUCCESS) {
 				// If the peer was using private address, update with ID address
 				if ((linkInfo.addrType == ADDRTYPE_PUBLIC_ID
 						|| linkInfo.addrType == ADDRTYPE_RANDOM_ID)
-						&& !Util_isBufSet(linkInfo.addrPriv, 0, B_ADDR_LEN)) {
+						&& !Util_isBufSet(linkInfo.addrPriv, 0,
+						B_ADDR_LEN)) {
 					// Update the address of the peer to the ID address
 					Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
 							"Addr updated: %s",
@@ -2478,7 +2514,8 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	switch (evtId) {
 	case SC_EVT_READ_RSSI:
-		SimpleCentral_enqueueMsg(SC_EVT_READ_RSSI, (uint8_t) (arg >> 8), NULL);
+		SimpleCentral_enqueueMsg(SC_EVT_READ_RSSI, (uint8_t) (arg >> 8),
+		NULL);
 		break;
 
 	case SC_EVT_READ_RPA:
@@ -3255,7 +3292,8 @@ static void SimpleServiceDiscovery_processFindInfoRsp(attFindInfoRsp_t rsp,
 		}
 		case BLE_INFO_RSP_CCCD: {
 			// Is there a CCCD belonging to this characteristic?
-			if (!memcmp(clientCharCfgUUID, &pPair[2], ATT_BT_UUID_SIZE)) {
+			if (!memcmp(clientCharCfgUUID, &pPair[2],
+			ATT_BT_UUID_SIZE)) {
 				// We found it, save the handle
 				service->chars[lastCharIndex].cccdHandle = BUILD_UINT16(
 						pPair[0], pPair[1]);
@@ -3263,7 +3301,8 @@ static void SimpleServiceDiscovery_processFindInfoRsp(attFindInfoRsp_t rsp,
 				findInforRspState = BLE_INFO_RSP_IDLE;
 			}
 			// Found new characteristic!
-			else if (!memcmp(characterUUID, &pPair[2], ATT_BT_UUID_SIZE)) {
+			else if (!memcmp(characterUUID, &pPair[2],
+			ATT_BT_UUID_SIZE)) {
 				findInforRspState = BLE_INFO_RSP_DESC;
 			}
 

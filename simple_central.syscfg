@@ -113,7 +113,7 @@ GPIO4.pinInstance.$name = "CONFIG_PIN_1";
 GPIO5.mode              = "Output";
 GPIO5.$name             = "GPIO_STIM";
 GPIO5.outputStrength    = "High";
-GPIO5.gpioPin.$assign   = "boosterpack.24";
+GPIO5.gpioPin.$assign   = "boosterpack.37";
 GPIO5.pinInstance.$name = "CONFIG_PIN_2";
 
 GPIO6.pull              = "Pull Up";
