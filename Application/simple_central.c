@@ -71,7 +71,7 @@
  */
 #define TARGET_PHASE			270
 #define TRIAL_VAR_LEN			6
-#define SHAM_EVERYISH			NULL
+#define SHAM_EVERYISH			NULL // NULL for never
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
@@ -393,7 +393,6 @@ SDFatFS_Handle sdfatfsHandle;
 uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
 int32_t dominantFreq, phaseAngle, msToStim, targetPhaseAngle; // float values * 1000 on peripheral (i.e. mHz)
-uint32_t SWAfileCount = 1; // start at 1 so display is never off
 uint32_t SWATrial = 0;
 uint8_t sd_online = 0x00;
 uint8_t expState = 0x00;
@@ -469,16 +468,12 @@ void sendBytes(uint8_t *Bufp, uint32_t len);
 SPI_Handle LED_SPI_Init(uint8_t _index);
 void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
-void getNVS(uint32_t *fileCount, uint8_t *nvsKey);
-void setNVS(uint32_t fileCount, uint8_t nvsKey);
 uint8_t setSham();
 
 SPI_Handle LED_SPI;
 uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
 char saveFile[15] = "";
 
-NVS_Handle nvsHandle;
-uint8_t NVS_KEY = 0xAA;
 uint8_t doSham = 0x00;
 
 /*********************************************************************
@@ -507,32 +502,6 @@ uint8_t setSham() {
 		shamCond = (rand() % SHAM_EVERYISH) == 0;
 	}
 	return (shamCond);
-}
-
-void getNVS(uint32_t *fileCount, uint8_t *nvsKey) {
-	uint8_t readBuf[5];
-	nvsHandle = NVS_open(CONFIG_NVS_0, NULL);
-	if (nvsHandle) {
-		NVS_read(nvsHandle, 0, (void*) readBuf, 5);
-		NVS_close(nvsHandle);
-		if (nvsKey != NULL) {
-			memcpy(nvsKey, readBuf, sizeof(uint8_t));
-		}
-		if (fileCount != NULL) {
-			memcpy(fileCount, readBuf + 1, sizeof(uint32_t));
-		}
-	}
-}
-void setNVS(uint32_t fileCount, uint8_t nvsKey) {
-	uint8_t writeBuf[5];
-	memcpy(writeBuf, &nvsKey, sizeof(uint8_t));
-	memcpy(writeBuf + 1, &fileCount, sizeof(uint32_t));
-	nvsHandle = NVS_open(CONFIG_NVS_0, NULL);
-	if (nvsHandle) {
-		NVS_write(nvsHandle, 0, (void*) writeBuf, 5,
-		NVS_WRITE_ERASE | NVS_WRITE_POST_VERIFY);
-		NVS_close(nvsHandle);
-	}
 }
 
 void speakerFilename(char *nameBuf, uint32_t iName) {
@@ -811,15 +780,6 @@ static void SimpleCentral_init(void) {
 	time_t t;
 	srand((unsigned) time(&t));
 
-	// has NVS ever been written to?
-	NVS_init();
-	uint8_t nvsKey = 0;
-//	getNVS(&SWAfileCount, &nvsKey);
-//	if (nvsKey != NVS_KEY) { // establish new NVS key, dont trust NVS SWAfileCount
-//		setNVS(0, NVS_KEY); // init
-//		SWAfileCount = 1; // the next file to write
-//	}
-
 	SDFatFS_init();
 	/* add_device() should be called once and is used for all media types */
 	add_device(fatfsPrefix, _MSA, ffcio_open, ffcio_close, ffcio_read,
@@ -829,7 +789,7 @@ static void SimpleCentral_init(void) {
 	DRIVE_NUM);
 
 	/* Variables for the CIO functions */
-	FILE *wdst, *rdst;
+	FILE *wdst;
 
 	sdfatfsHandle = SDFatFS_open(CONFIG_SD_0, DRIVE_NUM);
 	if (sdfatfsHandle) {
@@ -842,17 +802,6 @@ static void SimpleCentral_init(void) {
 			}
 			fflush(wdst);
 			fclose(wdst);
-			// find last file
-//			if (nvsKey == NVS_KEY) { // see if all files have been deleted
-//				speakerFilename(saveFile, SWAfileCount);
-//				rdst = fopen(saveFile, "r");
-//				if (rdst) {
-//					SWAfileCount++; // increment but only save to NVS at fwrite
-//					fclose(rdst);
-//				} else {
-//					SWAfileCount = 1; // re-init, again- only save to NVS at fwrite
-//				}
-//			}
 		}
 		SDFatFS_close(sdfatfsHandle);
 	}
@@ -1416,6 +1365,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "Initialized");
 		Display_printf(dispHandle, SC_ROW_NUM_CONN, 0, "Num Conns: %d",
 				numConn);
+		Display_printf(dispHandle, SC_ROW_RPA, 0, "Trial: %05d", SWATrial); // use RPA row
 
 		// Display device address
 		Display_printf(dispHandle, SC_ROW_IDA, 0, "%s: %s",
@@ -1507,6 +1457,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "%s", pStrAddr);
 		Display_printf(dispHandle, SC_ROW_NUM_CONN, 0, "Num Conns: %d",
 				numConn);
+		Display_printf(dispHandle, SC_ROW_RPA, 0, "Trial: %05d", SWATrial); // use RPA row
 
 		Util_startClock(&dataTimeout);
 
@@ -1594,6 +1545,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		Display_printf(dispHandle, SC_ROW_NON_CONN, 0, "(%s)", pStrAddr);
 		Display_printf(dispHandle, SC_ROW_NUM_CONN, 0, "Num Conns: %d",
 				numConn);
+		Display_printf(dispHandle, SC_ROW_RPA, 0, "Trial: %05d", SWATrial); // use RPA row
 
 		for (i = 0; i < TBM_GET_NUM_ITEM(&scMenuConnect); i++) {
 			if (!memcmp(TBM_GET_ACTION_DESC(&scMenuConnect, i), pStrAddr,
@@ -1868,7 +1820,6 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					if (success) {
 						Display_printf(dispHandle, 0, 0, "SD saved %05d",
 								SWATrial);
-//						setNVS(SWAfileCount, NVS_KEY); // save file that wrote
 						SWATrial++;
 						// display file that would be writing
 						buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
