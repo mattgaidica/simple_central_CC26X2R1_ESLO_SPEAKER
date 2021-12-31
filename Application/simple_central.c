@@ -69,8 +69,8 @@
 /*********************************************************************
  * CONSTANTS
  */
-#define TARGET_PHASE			270
-#define TRIAL_VAR_LEN			6
+#define TARGET_PHASE			90
+#define TRIAL_VAR_LEN			7
 #define SHAM_EVERYISH			NULL // NULL for never
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
@@ -394,6 +394,7 @@ uint16_t iNotifData = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
 int32_t dominantFreq, phaseAngle, msToStim, targetPhaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 uint32_t SWATrial = 0;
+uint32_t absoluteTime;
 uint8_t sd_online = 0x00;
 uint8_t expState = 0x00;
 uint8_t isBusy = 0x00;
@@ -1728,10 +1729,10 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 //			}
 			Util_restartClock(&dataTimeout, DATA_TIMEOUT_PERIOD);
 			// Matt: tricks to remove the need for floats here
-			uint32_t swaKey;
-			memcpy(&swaKey, pMsg->msg.handleValueInd.pValue, sizeof(int32_t));
-			if (swaKey == SWA_KEY) {
+			if (pMsg->msg.handleValueInd.pValue[3] == 0x61) { // test for time
 				isBusy = 0x01;
+				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue,
+						sizeof(int32_t));
 				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
 						sizeof(int32_t));
 				memcpy(&phaseAngle, pMsg->msg.handleValueInd.pValue + 8,
@@ -1804,7 +1805,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 							int32_t trialVars[TRIAL_VAR_LEN] = {
 									(int32_t) doSham, dominantFreq, phaseAngle,
-									SWATrial, msToStim, targetPhaseAngle };
+									SWATrial, absoluteTime, msToStim, targetPhaseAngle };
 							numel += fwrite(trialVars, sizeof(uint32_t),
 							TRIAL_VAR_LEN, dst);
 							if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
