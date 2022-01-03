@@ -69,7 +69,7 @@
 /*********************************************************************
  * CONSTANTS
  */
-#define TARGET_PHASE			90
+#define TARGET_PHASE			0
 #define TRIAL_VAR_LEN			7
 #define SHAM_EVERYISH			NULL // NULL for never
 #define STIM_TIMEOUT_PERIOD		50 // ms
@@ -1747,16 +1747,19 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 				targetPhaseAngle = TARGET_PHASE * 1000; // 0 <= target < 360
 				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
-
 				if (remainingPhase < 0) {
 					remainingPhase = -remainingPhase; // this shouldn't happen
 				} else {
 					remainingPhase = (360 * 1000) - remainingPhase;
 				}
 				msToStim = (1000 * remainingPhase / (360 * dominantFreq));
-				// !! handle BLE latency
-				if (msToStim < 0 | msToStim > 3000) {
-					return; // invalid, return and pretend STIM was never indicated
+				// correct for timing: BLE and center stim on target phase
+				msToStim = msToStim - BLE_LATENCY - (STIM_TIMEOUT_PERIOD / 2);
+				if (msToStim < 0) {
+					msToStim = msToStim + (360 / dominantFreq); // add entire cycle
+				}
+				if (msToStim < 0 || msToStim > 2000) { // greater than 0.5Hz cycle
+					return; // invalid, return to pretend STIM was never indicated
 				}
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 				if (doSham == 0x00) {
@@ -1805,7 +1808,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 							int32_t trialVars[TRIAL_VAR_LEN] = {
 									(int32_t) doSham, dominantFreq, phaseAngle,
-									SWATrial, absoluteTime, msToStim, targetPhaseAngle };
+									SWATrial, absoluteTime, msToStim,
+									targetPhaseAngle };
 							numel += fwrite(trialVars, sizeof(uint32_t),
 							TRIAL_VAR_LEN, dst);
 							if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
@@ -2503,7 +2507,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	case ES_MODE_ACTIONS:
 		if (expState == 0x01 && numConn == 0x00 && isBusy == 0x00) {
-			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL);
+			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL); // START EXPERIMENT
 		}
 		// likely that state recently changed, but need to make sure that
 		// SWA is allowed to finish writing if in progress
