@@ -45,6 +45,7 @@
 #include "osal_list.h"
 #include "board_key.h"
 #include <ti_drivers_config.h>
+#include <driverlib/sys_ctrl.h> // for reset: see SysCtrlSystemReset()
 
 #include "ti_ble_config.h"
 #include "ble_user_config.h"
@@ -71,11 +72,12 @@
  */
 #define TARGET_PHASE			0
 #define TRIAL_VAR_LEN			7
-#define SHAM_EVERYISH			NULL // NULL for never
+#define SHAM_EVERYISH			5 // NULL for never, based on: uint8_t shamCond = (rand() % SHAM_EVERYISH) == 0;
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
 #define EXP_PERIOD				30000 // ms
+#define CONT_EXP				1 // overrides EXP_PERIOD
 
 #define NLED 			10 // counts up to 2^10=1024 trials
 #define LED_BUF_LEN 	32 * NLED
@@ -1266,7 +1268,8 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 		Display_printf(dispHandle, SC_ROW_ANY_CONN, 0, "Insufficient Memory");
 
 		// We might be in the middle of scanning, try stopping it.
-		GapScan_disable("");
+//		GapScan_disable("");
+		SysCtrlSystemReset();
 		break;
 	}
 
@@ -1729,7 +1732,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 //			}
 			Util_restartClock(&dataTimeout, DATA_TIMEOUT_PERIOD);
 			// Matt: tricks to remove the need for floats here
-			if (pMsg->msg.handleValueInd.pValue[3] == 0x61) { // test for time
+			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
 				isBusy = 0x01;
 				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue,
 						sizeof(int32_t));
@@ -1835,7 +1838,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					}
 					// !!this should probably depend on experiment state/button
 					doSham = setSham(); // for next trial
-					Task_sleep(100000);
+					Task_sleep(100000); // pause to show display
 					isBusy = 0x00;
 				}
 				GPIO_write(LED_GREEN, 0x00);
@@ -2517,7 +2520,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 		break;
 
 	case ES_EXP_TIMEOUT:
-		if (expState == 0x00) {
+		if (expState == 0x00 || CONT_EXP == 1) {
 			expState = 0x01;
 		} else {
 			expState = 0x00;
