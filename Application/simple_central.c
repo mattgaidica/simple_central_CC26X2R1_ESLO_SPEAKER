@@ -77,7 +77,7 @@
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
 #define EXP_PERIOD				30000 // ms
-#define CONT_EXP				1 // overrides EXP_PERIOD
+#define CONT_EXP				0 // overrides EXP_PERIOD
 
 #define NLED 			10 // counts up to 2^10=1024 trials
 #define LED_BUF_LEN 	32 * NLED
