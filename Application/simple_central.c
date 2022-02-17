@@ -481,7 +481,7 @@ SPI_Handle LED_SPI_Init(uint8_t _index);
 void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
 uint8_t setSham();
-static void WatchdogCallbackFxn();
+//static void WatchdogCallbackFxn();
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -501,7 +501,7 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
  * PUBLIC FUNCTIONS
  */
 
-void WatchdogCallbackFxn(Watchdog_Handle handle) {
+static void WatchdogCallbackFxn(Watchdog_Handle handle) {
 	SysCtrlSystemReset();
 }
 
@@ -568,7 +568,6 @@ void resetExperiment() {
 	iNotifData = 0;
 	paramsSynced = 0x00;
 	GPIO_write(LED_GREEN, 0x00);
-	Watchdog_clear(watchdogHandle);
 }
 
 /*
@@ -1545,11 +1544,6 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 		// Cancel timers
 		SimpleCentral_CancelRssi(connHandle);
-		Util_stopClock(&dataTimeout); // cancel clock
-		// if peripheral drops out mid-stim/indication
-		if (isBusy == 0x01) {
-			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
-		}
 
 		// Mark this connection deleted in the connected device list.
 		connIndex = SimpleCentral_removeConnInfo(connHandle);
@@ -1592,6 +1586,12 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		// with, go to main menu.
 		if (connHandle == scConnHandle) {
 			tbm_goTo(&scMenuMain);
+		}
+
+		Util_stopClock(&dataTimeout); // cancel clock
+		// if peripheral drops out mid-stim/indication
+		if (isBusy == 0x01) {
+			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		}
 
 		break;
@@ -1747,8 +1747,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
 				isBusy = 0x01;
 
-				// if we get here, this routine should not be interrupted by a timeout
-				Util_stopClock(&dataTimeout); // cancel clock
+				// if we get here, this routine should not be interrupted by a nearby timeout
+				Util_rescheduleClock(&dataTimeout, DATA_TIMEOUT_PERIOD); // cancel clock
 
 				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue,
 						sizeof(int32_t));
@@ -2509,6 +2509,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		break;
 
+		// !! Matt: after rm exp loop, need to check switch state at startup
 	case ES_MODE_LOOP:
 		// START EXPERIMENT
 		if (GPIO_read(SWA_SWITCH) == 0x01 && GPIO_read(SWA_LIGHT) == 0x00) {
@@ -2533,6 +2534,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 		if (expState == 0x00 && numConn == 0x00 && isBusy == 0x00) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		}
+		Watchdog_clear(watchdogHandle);
 		break;
 
 //	case ES_EXP_TIMEOUT:

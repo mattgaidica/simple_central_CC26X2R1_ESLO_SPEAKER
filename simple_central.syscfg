@@ -161,7 +161,7 @@ SPI2.mosiPinInstance.$name = "CONFIG_PIN_16";
 TRNG1.$name = "CONFIG_TRNG_0";
 
 Watchdog1.$name  = "CONFIG_WATCHDOG_0";
-Watchdog1.period = 120000;
+Watchdog1.period = 15000;
 
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
