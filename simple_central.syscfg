@@ -45,6 +45,8 @@ const SPI1        = SPI.addInstance();
 const SPI2        = SPI.addInstance();
 const TRNG        = scripting.addModule("/ti/drivers/TRNG");
 const TRNG1       = TRNG.addInstance();
+const Watchdog    = scripting.addModule("/ti/drivers/Watchdog", {}, false);
+const Watchdog1   = Watchdog.addInstance();
 
 /**
  * Write custom configuration values to the imported modules.
@@ -158,6 +160,9 @@ SPI2.mosiPinInstance.$name = "CONFIG_PIN_16";
 
 TRNG1.$name = "CONFIG_TRNG_0";
 
+Watchdog1.$name  = "CONFIG_WATCHDOG_0";
+Watchdog1.period = 120000;
+
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
@@ -185,3 +190,4 @@ SPI2.spi.sclkPin.$suggestSolution           = "boosterpack.10";
 SPI2.spi.misoPin.$suggestSolution           = "boosterpack.9";
 SPI2.spi.dmaRxChannel.$suggestSolution      = "DMA_CH16";
 SPI2.spi.dmaTxChannel.$suggestSolution      = "DMA_CH17";
+Watchdog1.watchdog.$suggestSolution         = "WDT0";

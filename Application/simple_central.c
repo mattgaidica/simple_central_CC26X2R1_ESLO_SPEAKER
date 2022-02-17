@@ -26,6 +26,7 @@
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/SDFatFS.h>
 #include <ti/drivers/NVS.h>
+#include <ti/drivers/Watchdog.h>
 
 //// CMSIS Math
 //#include "arm_math.h"
@@ -76,8 +77,7 @@
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
-#define EXP_PERIOD				30000 // ms
-#define CONT_EXP				0 // overrides EXP_PERIOD
+//#define EXP_PERIOD				30000 // ms
 
 #define NLED 			10 // counts up to 2^10=1024 trials
 #define LED_BUF_LEN 	32 * NLED
@@ -398,15 +398,24 @@ int32_t dominantFreq, phaseAngle, msToStim, targetPhaseAngle; // float values * 
 uint32_t SWATrial = 0;
 uint32_t absoluteTime;
 uint8_t sd_online = 0x00;
-uint8_t expState = 0x00;
+uint8_t expState = 0x01; // start on
 uint8_t isBusy = 0x00;
 uint8_t paramsSynced = 0x00;
+
+SPI_Handle LED_SPI;
+uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
+char saveFile[15] = "";
+
+uint8_t doSham = 0x00;
+
+Watchdog_Params watchdogParams;
+Watchdog_Handle watchdogHandle;
 
 static Clock_Struct clkSwaModeLoop;
 static Clock_Struct clkSwaActions;
 static Clock_Struct stimTimeout;
 static Clock_Struct dataTimeout;
-static Clock_Struct expTimeout;
+//static Clock_Struct expTimeout;
 static Clock_Struct indicationClk;
 
 /*********************************************************************
@@ -472,12 +481,7 @@ SPI_Handle LED_SPI_Init(uint8_t _index);
 void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
 uint8_t setSham();
-
-SPI_Handle LED_SPI;
-uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
-char saveFile[15] = "";
-
-uint8_t doSham = 0x00;
+static void WatchdogCallbackFxn();
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -496,6 +500,10 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 /*********************************************************************
  * PUBLIC FUNCTIONS
  */
+
+void WatchdogCallbackFxn(Watchdog_Handle handle) {
+	SysCtrlSystemReset();
+}
 
 uint8_t setSham() {
 	uint8_t shamCond;
@@ -552,14 +560,15 @@ void sendBytes(uint8_t *Bufp, uint32_t len) {
 }
 
 void resetExperiment() {
-	isBusy = 0x00;
-	iNotifData = 0;
-	paramsSynced = 0x00;
 	if (numConn > 0) {
 		scConnHandle = connList[0].connHandle;
 		SimpleCentral_doDisconnect(0);
 	}
+	isBusy = 0x00;
+	iNotifData = 0;
+	paramsSynced = 0x00;
 	GPIO_write(LED_GREEN, 0x00);
+	Watchdog_clear(watchdogHandle);
 }
 
 /*
@@ -825,6 +834,13 @@ static void SimpleCentral_init(void) {
 		}
 	}
 	GPIO_write(SWA_LIGHT, 0x00); // shutdown because its read as a mode later
+	Watchdog_init();
+	Watchdog_Params_init(&watchdogParams);
+	watchdogParams.resetMode = Watchdog_RESET_ON;
+	watchdogParams.callbackFxn = (Watchdog_Callback) WatchdogCallbackFxn; // or NULL
+	watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &watchdogParams);
+	if (watchdogHandle == NULL) {
+	}
 
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
@@ -846,8 +862,8 @@ static void SimpleCentral_init(void) {
 	Util_constructClock(&clkSwaActions, SimpleCentral_clockHandler,
 	SWA_MODE_ACTION_PERIOD, SWA_MODE_ACTION_PERIOD, true, ES_MODE_ACTIONS);
 
-	Util_constructClock(&expTimeout, SimpleCentral_clockHandler, 100,
-	EXP_PERIOD, false, ES_EXP_TIMEOUT);
+//	Util_constructClock(&expTimeout, SimpleCentral_clockHandler, 100,
+//	EXP_PERIOD, false, ES_EXP_TIMEOUT);
 
 	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
 	false, ES_ENABLE_INDICATIONS);
@@ -1269,7 +1285,7 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 
 		// We might be in the middle of scanning, try stopping it.
 //		GapScan_disable("");
-		SysCtrlSystemReset();
+		SysCtrlSystemReset(); // Matt: not sure how it gets here, forece restart
 		break;
 	}
 
@@ -1572,7 +1588,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		tbm_setItemStatus(&scMenuMain, itemsToEnable,
 		SC_ITEM_ALL & ~itemsToEnable);
 
-		// If we are in the context which the teminated connection was associated
+		// If we are in the context which the terminated connection was associated
 		// with, go to main menu.
 		if (connHandle == scConnHandle) {
 			tbm_goTo(&scMenuMain);
@@ -1727,13 +1743,13 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
-//			if (paramsSynced == 0x00) {
-//				return; // we're not ready yet
-//			}
-			Util_restartClock(&dataTimeout, DATA_TIMEOUT_PERIOD);
 			// Matt: tricks to remove the need for floats here
 			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
 				isBusy = 0x01;
+
+				// if we get here, this routine should not be interrupted by a timeout
+				Util_stopClock(&dataTimeout); // cancel clock
+
 				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue,
 						sizeof(int32_t));
 				memcpy(&dominantFreq, pMsg->msg.handleValueInd.pValue + 4,
@@ -2496,13 +2512,13 @@ void SimpleCentral_clockHandler(UArg arg) {
 	case ES_MODE_LOOP:
 		// START EXPERIMENT
 		if (GPIO_read(SWA_SWITCH) == 0x01 && GPIO_read(SWA_LIGHT) == 0x00) {
-			Util_startClock(&expTimeout);
+//			Util_startClock(&expTimeout);
+			expState = 0x01; // force experiment OFF
 		}
 		// STOP EXPERIMENT
 		if (GPIO_read(SWA_SWITCH) == 0x00 && GPIO_read(SWA_LIGHT) == 0x01) {
-			Util_stopClock(&expTimeout);
+//			Util_stopClock(&expTimeout);
 			expState = 0x00; // force experiment OFF
-			GPIO_write(LED_RED, expState);
 		}
 		GPIO_write(SWA_LIGHT, GPIO_read(SWA_SWITCH));
 		GPIO_write(LED_RED, expState);
@@ -2519,13 +2535,13 @@ void SimpleCentral_clockHandler(UArg arg) {
 		}
 		break;
 
-	case ES_EXP_TIMEOUT:
-		if (expState == 0x00 || CONT_EXP == 1) {
-			expState = 0x01;
-		} else {
-			expState = 0x00;
-		}
-		break;
+//	case ES_EXP_TIMEOUT:
+//		if (expState == 0x00) {
+//			expState = 0x01;
+//		} else {
+//			expState = 0x00;
+//		}
+//		break;
 
 	case ES_ENABLE_INDICATIONS:
 		SimpleCentral_enqueueMsg(ES_ENABLE_INDICATIONS, 0, NULL);
