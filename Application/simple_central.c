@@ -1804,13 +1804,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 				// save SD is blocking on SD card, so it disconnects from peripheral until done
 				if (iNotifData >= SWA_LEN * 2) {
-					scConnHandle = connList[0].connHandle;
-					SimpleCentral_doDisconnect(0);
-					iNotifData = 0;
-
 					// write SWA buffer, dominantFreq, and phaseAngle to memory
-
-					/* Variables for the CIO functions */
 					FILE *dst;
 					/* Variables to keep track of the file copy progress */
 					uint8_t success = 0x00;
@@ -1852,10 +1846,16 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					} else {
 						Display_printf(dispHandle, 0, 0, "Error with SD Card.");
 					}
-					// !!this should probably depend on experiment state/button
 					doSham = setSham(); // for next trial
-					Task_sleep(100000); // pause to show display
+//					Task_sleep(50000); // pause to show display
 					isBusy = 0x00;
+
+					SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
+
+					// try disconnecting at end, doDisconnect kicks off a lot of stuff that might interfere
+//					scConnHandle = connList[0].connHandle;
+//					SimpleCentral_doDisconnect(0);
+//					iNotifData = 0;
 				}
 				GPIO_write(LED_GREEN, 0x00);
 			}
