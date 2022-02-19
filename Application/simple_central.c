@@ -481,7 +481,6 @@ SPI_Handle LED_SPI_Init(uint8_t _index);
 void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
 uint8_t setSham();
-//static void WatchdogCallbackFxn();
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -567,7 +566,9 @@ void resetExperiment() {
 	isBusy = 0x00;
 	iNotifData = 0;
 	paramsSynced = 0x00;
+//	dispHandle = Display_open(Display_Type_LCD, NULL);
 	GPIO_write(LED_GREEN, 0x00);
+//	Watchdog_clear(watchdogHandle);
 }
 
 /*
@@ -832,14 +833,14 @@ static void SimpleCentral_init(void) {
 			Task_sleep(100000);
 		}
 	}
-	GPIO_write(SWA_LIGHT, 0x00); // shutdown because its read as a mode later
-	Watchdog_init();
-	Watchdog_Params_init(&watchdogParams);
-	watchdogParams.resetMode = Watchdog_RESET_ON;
-	watchdogParams.callbackFxn = (Watchdog_Callback) WatchdogCallbackFxn; // or NULL
-	watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &watchdogParams);
-	if (watchdogHandle == NULL) {
-	}
+	GPIO_write(SWA_LIGHT, expState); // on at start
+//	Watchdog_init();
+//	Watchdog_Params_init(&watchdogParams);
+//	watchdogParams.resetMode = Watchdog_RESET_ON;
+//	watchdogParams.callbackFxn = (Watchdog_Callback) WatchdogCallbackFxn; // or NULL
+//	watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &watchdogParams);
+//	if (watchdogHandle == NULL) {
+//	}
 
 // Disable all items in the main menu
 	tbm_setItemStatus(&scMenuMain, SC_ITEM_NONE, SC_ITEM_ALL);
@@ -1748,7 +1749,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				isBusy = 0x01;
 
 				// if we get here, this routine should not be interrupted by a nearby timeout
-				Util_rescheduleClock(&dataTimeout, DATA_TIMEOUT_PERIOD); // cancel clock
+				Util_rescheduleClock(&dataTimeout, DATA_TIMEOUT_PERIOD); // delay clock
 
 				memcpy(&absoluteTime, pMsg->msg.handleValueInd.pValue,
 						sizeof(int32_t));
@@ -1803,7 +1804,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				ATT_HandleValueCfm(pMsg->connHandle); // ack
 
 				// save SD is blocking on SD card, so it disconnects from peripheral until done
-				if (iNotifData >= SWA_LEN * 2) {
+				if (iNotifData == SWA_LEN * 2) {
 					// write SWA buffer, dominantFreq, and phaseAngle to memory
 					FILE *dst;
 					/* Variables to keep track of the file copy progress */
@@ -1812,8 +1813,9 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					Display_close(dispHandle);
 					sdfatfsHandle = SDFatFS_open(CONFIG_SD_0,
 					DRIVE_NUM);
-					speakerFilename(saveFile, SWATrial);
 					if (sdfatfsHandle) {
+						GPIO_write(LED_RED, 0x00);
+						speakerFilename(saveFile, SWATrial);
 						dst = fopen(saveFile, "w");
 						if (dst) {
 							unsigned int numel = fwrite(swaBuffer,
@@ -1827,6 +1829,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 							TRIAL_VAR_LEN, dst);
 							if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
 								success = 0x01;
+								GPIO_write(LED_RED, 0x01);
 							}
 							fflush(dst);
 							fclose(dst);
@@ -2030,12 +2033,12 @@ static void SimpleCentral_processPairState(uint8_t state,
 			SimpleCentral_autoConnect();
 		}
 	} else if (state == GAPBOND_PAIRING_STATE_ENCRYPTED) {
-		if (status == SUCCESS) {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "ENCRYPTED");
-		} else {
-			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "~Encrypted: %d",
-					status);
-		}
+//		if (status == SUCCESS) {
+//			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "ENCRYPTED");
+//		} else {
+//			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "~Encrypted: %d",
+//					status);
+//		}
 
 		GAPBondMgr_GetParameter(GAPBOND_PAIRING_MODE, &pairMode);
 
@@ -2534,7 +2537,6 @@ void SimpleCentral_clockHandler(UArg arg) {
 		if (expState == 0x00 && numConn == 0x00 && isBusy == 0x00) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		}
-		Watchdog_clear(watchdogHandle);
 		break;
 
 //	case ES_EXP_TIMEOUT:
