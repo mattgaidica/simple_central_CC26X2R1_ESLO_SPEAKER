@@ -400,7 +400,7 @@ uint32_t absoluteTime;
 uint8_t sd_online = 0x00;
 uint8_t expState = 0x01; // start on
 uint8_t isBusy = 0x00;
-uint8_t paramsSynced = 0x00;
+uint8_t paramsSynced = 0x00; // deprecated, not in use
 
 SPI_Handle LED_SPI;
 uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
@@ -500,9 +500,9 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
  * PUBLIC FUNCTIONS
  */
 
-static void WatchdogCallbackFxn(Watchdog_Handle handle) {
-	SysCtrlSystemReset();
-}
+//static void WatchdogCallbackFxn(Watchdog_Handle handle) {
+//	SysCtrlSystemReset();
+//}
 
 uint8_t setSham() {
 	uint8_t shamCond;
@@ -1745,6 +1745,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
 			// Matt: tricks to remove the need for floats here
+			GPIO_write(GPIO_DEBUG, 0x01);
 			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
 				isBusy = 0x01;
 
@@ -1860,6 +1861,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 //					SimpleCentral_doDisconnect(0);
 //					iNotifData = 0;
 				}
+				GPIO_write(GPIO_DEBUG, 0x00);
 				GPIO_write(LED_GREEN, 0x00);
 			}
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
