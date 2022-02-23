@@ -77,7 +77,6 @@
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
-//#define EXP_PERIOD				30000 // ms
 
 #define NLED 			10 // counts up to 2^10=1024 trials
 #define LED_BUF_LEN 	32 * NLED
@@ -415,7 +414,6 @@ static Clock_Struct clkSwaModeLoop;
 static Clock_Struct clkSwaActions;
 static Clock_Struct stimTimeout;
 static Clock_Struct dataTimeout;
-//static Clock_Struct expTimeout;
 static Clock_Struct indicationClk;
 
 /*********************************************************************
@@ -481,6 +479,19 @@ SPI_Handle LED_SPI_Init(uint8_t _index);
 void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
 uint8_t setSham();
+
+
+#include <ti/sysbios/family/arm/m3/Hwi.h>
+volatile uintptr_t *excPC = 0;
+volatile uintptr_t *excCaller = 0;
+void execHandlerHook(Hwi_ExcContext *ctx) {
+	excPC = ctx->pc;     // Program counter where exception occurred
+	excCaller = ctx->lr; // Link Register when exception occurred
+
+	while (2)
+		;
+}
+
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -566,7 +577,6 @@ void resetExperiment() {
 	isBusy = 0x00;
 	iNotifData = 0;
 	paramsSynced = 0x00;
-//	dispHandle = Display_open(Display_Type_LCD, NULL);
 	GPIO_write(LED_GREEN, 0x00);
 //	Watchdog_clear(watchdogHandle);
 }
@@ -578,16 +588,13 @@ int32_t fatfs_getFatTime(void) {
 	time_t seconds;
 	uint32_t fatTime;
 	struct tm *pTime;
-
 	/*
 	 *  TI time() returns seconds elapsed since 1900, while other tools
 	 *  return seconds from 1970.  However, both TI and GNU localtime()
 	 *  sets tm tm_year to number of years since 1900.
 	 */
 	seconds = time(NULL);
-
 	pTime = localtime(&seconds);
-
 	/*
 	 *  localtime() sets pTime->tm_year to number of years
 	 *  since 1900, so subtract 80 from tm_year to get FAT time
@@ -861,9 +868,6 @@ static void SimpleCentral_init(void) {
 
 	Util_constructClock(&clkSwaActions, SimpleCentral_clockHandler,
 	SWA_MODE_ACTION_PERIOD, SWA_MODE_ACTION_PERIOD, true, ES_MODE_ACTIONS);
-
-//	Util_constructClock(&expTimeout, SimpleCentral_clockHandler, 100,
-//	EXP_PERIOD, false, ES_EXP_TIMEOUT);
 
 	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
 	false, ES_ENABLE_INDICATIONS);
@@ -1548,10 +1552,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 
 		// Mark this connection deleted in the connected device list.
 		connIndex = SimpleCentral_removeConnInfo(connHandle);
-		// Rm for ESLO Speaker -Matt
-//		if (autoConnect) {
-//			SimpleCentral_autoConnect();
-//		}
+
 		// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
 		SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
@@ -1590,10 +1591,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 
 		Util_stopClock(&dataTimeout); // cancel clock
-		// if peripheral drops out mid-stim/indication
-		if (isBusy == 0x01) {
-			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
-		}
+		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 
 		break;
 	}
@@ -1851,10 +1849,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 						Display_printf(dispHandle, 0, 0, "Error with SD Card.");
 					}
 					doSham = setSham(); // for next trial
-//					Task_sleep(50000); // pause to show display
 					isBusy = 0x00;
-
-					SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 
 					// try disconnecting at end, doDisconnect kicks off a lot of stuff that might interfere
 //					scConnHandle = connList[0].connHandle;
@@ -2514,7 +2509,6 @@ void SimpleCentral_clockHandler(UArg arg) {
 		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		break;
 
-		// !! Matt: after rm exp loop, need to check switch state at startup
 	case ES_MODE_LOOP:
 		// START EXPERIMENT
 		if (GPIO_read(SWA_SWITCH) == 0x01 && GPIO_read(SWA_LIGHT) == 0x00) {
@@ -2540,14 +2534,6 @@ void SimpleCentral_clockHandler(UArg arg) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		}
 		break;
-
-//	case ES_EXP_TIMEOUT:
-//		if (expState == 0x00) {
-//			expState = 0x01;
-//		} else {
-//			expState = 0x00;
-//		}
-//		break;
 
 	case ES_ENABLE_INDICATIONS:
 		SimpleCentral_enqueueMsg(ES_ENABLE_INDICATIONS, 0, NULL);
