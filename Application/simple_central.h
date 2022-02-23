@@ -69,7 +69,7 @@ extern "C"
 // Note: this value cannot be greater than the number of items reserved in
 // scMenuConnect (See simple_central_menu.c)
 // This cannot exceed 27 (two-button menu's constraint)
-#define DEFAULT_MAX_SCAN_RES                 8
+#define DEFAULT_MAX_SCAN_RES                 20
 
 /*********************************************************************
  * MACROS

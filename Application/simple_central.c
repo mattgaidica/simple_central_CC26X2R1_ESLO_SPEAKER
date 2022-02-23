@@ -1289,7 +1289,7 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 
 		// We might be in the middle of scanning, try stopping it.
 //		GapScan_disable("");
-		SysCtrlSystemReset(); // Matt: not sure how it gets here, forece restart
+		SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
 		break;
 	}
 

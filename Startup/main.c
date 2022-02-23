@@ -54,6 +54,7 @@
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/sysbios/BIOS.h>
 #include <ti/sysbios/knl/Clock.h>
+#include <driverlib/sys_ctrl.h> // for reset: see SysCtrlSystemReset()
 
 #include <icall.h>
 #include "hal_assert.h"
@@ -201,6 +202,8 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
   }
 
   Display_print0(dispHandle, 0, 0, ">>>STACK ASSERT");
+
+  SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
 
   // check the assert cause
   switch (assertCause)
