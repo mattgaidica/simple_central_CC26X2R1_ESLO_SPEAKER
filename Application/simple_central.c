@@ -166,14 +166,6 @@ enum {
 	AUTOCONNECT_GROUP_ES = 1              // Group ESLO
 };
 
-// Discovery states
-//enum {
-//	BLE_DISC_STATE_IDLE,                // Idle
-//	BLE_DISC_STATE_MTU,                 // Exchange ATT MTU size
-//	BLE_DISC_STATE_SVC,                 // Service discovery
-//	BLE_DISC_STATE_CHAR                // Characteristic discovery
-//};
-
 // Discovery states from simple_service_discovery.c
 typedef enum {
 	BLE_DISC_STATE_IDLE, BLE_DISC_STATE_MTU,            // Exchange ATT MTU size
@@ -321,9 +313,6 @@ static uint16_t scConnHandle = LINKDB_CONNHANDLE_INVALID;
 
 // Accept or reject L2CAP connection parameter update request
 static bool acceptParamUpdateReq = true;
-
-// Discovery state
-static uint8_t discState = BLE_DISC_STATE_IDLE;
 
 // State of the discovery process from simple_service_discovery.c
 static discStates_t discoveryState = BLE_DISC_STATE_IDLE;
@@ -664,8 +653,8 @@ static void SimpleCentral_autoConnect(void) {
 				}
 			}
 		} else {
-			Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
-					"AutoConn max conn.");
+//			Display_printf(dispHandle, SC_ROW_NON_CONN, 0,
+//					"AutoConn max conn.");
 		}
 	}
 }
@@ -1086,7 +1075,7 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 						break;
 					}
 				}
-				//If tempMemer is NULL this meams advertiser not in list.
+				//If tempMemer is NULL this means advertiser not in list.
 				if (tempMember == NULL) {
 					groupListElem_t *groupMember =
 							(groupListElem_t*) ICall_malloc(
@@ -1871,7 +1860,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			// MTU size updated
 //			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "MTU Size: %d",
 //					pMsg->msg.mtuEvt.MTU);
-		} else if (discState != BLE_DISC_STATE_IDLE) {
+		} else { //if (discoveryState != BLE_DISC_STATE_IDLE) {
 			SimpleCentral_processGATTDiscEvent(pMsg);
 		}
 	} // else - in case a GATT message came after a connection has dropped, ignore it.
@@ -2082,8 +2071,6 @@ static void SimpleCentral_startSvcDiscovery(void) {
 
 // Initialize cached handles, not used right now -Matt
 //	svcStartHdl = svcEndHdl = 0;
-
-	discState = BLE_DISC_STATE_MTU;
 	discoveryState = BLE_DISC_STATE_IDLE;
 
 // Discover GATT Server's Rx MTU size
@@ -2114,97 +2101,6 @@ static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
 	}
 }
 
-/*********************************************************************
- * @fn      SimpleCentral_processGATTDiscEvent
- *
- * @brief   Process GATT discovery event
- *
- * @return  none
- */
-//static void SimpleCentral_processGATTDiscEvent(gattMsgEvent_t *pMsg) {
-//	if (discState == BLE_DISC_STATE_MTU) {
-//		// MTU size response received, discover simple service
-//		if (pMsg->method == ATT_EXCHANGE_MTU_RSP) {
-//			uint8_t uuid[ATT_BT_UUID_SIZE] =
-//					{ LO_UINT16(SIMPLEPROFILE_SERV_UUID), HI_UINT16(
-//							SIMPLEPROFILE_SERV_UUID) };
-//
-//			discState = BLE_DISC_STATE_SVC;
-//
-//			// Discovery simple service
-//			VOID GATT_DiscPrimaryServiceByUUID(pMsg->connHandle, uuid,
-//					ATT_BT_UUID_SIZE, selfEntity);
-//		}
-//	} else if (discState == BLE_DISC_STATE_SVC) {
-//		// Service found, store handles
-//		if (pMsg->method == ATT_FIND_BY_TYPE_VALUE_RSP
-//				&& pMsg->msg.findByTypeValueRsp.numInfo > 0) {
-//			svcStartHdl = ATT_ATTR_HANDLE(
-//					pMsg->msg.findByTypeValueRsp.pHandlesInfo, 0);
-//			svcEndHdl = ATT_GRP_END_HANDLE(
-//					pMsg->msg.findByTypeValueRsp.pHandlesInfo, 0);
-//		}
-//
-//		// If procedure complete
-//		if (((pMsg->method == ATT_FIND_BY_TYPE_VALUE_RSP)
-//				&& (pMsg->hdr.status == bleProcedureComplete))
-//				|| (pMsg->method == ATT_ERROR_RSP)) {
-//			if (svcStartHdl != 0) {
-//				attReadByTypeReq_t req;
-//
-//				// Discover characteristic
-//				discState = BLE_DISC_STATE_CHAR;
-//
-//				req.startHandle = svcStartHdl;
-//				req.endHandle = svcEndHdl;
-//				req.type.len = ATT_BT_UUID_SIZE;
-//				req.type.uuid[0] = LO_UINT16(SIMPLEPROFILE_CHAR5_UUID); // Axy -Matt
-//				req.type.uuid[1] = HI_UINT16(SIMPLEPROFILE_CHAR5_UUID);
-//
-//				GATT_DiscAllCharDescs(pMsg->connHandle, svcStartHdl, svcEndHdl,
-//						selfEntity);
-//
-////				VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
-//			}
-//		}
-//	} else if (discState == BLE_DISC_STATE_CHAR) {
-//
-//		if (pMsg->method == ATT_FIND_INFO_RSP) {
-//
-//			if (pMsg->msg.findInfoRsp.numInfo > 0) {
-////				SimpleServiceDiscovery_processFindInfoRsp(pMsg->msg.findInfoRsp,
-////						service);
-//			}
-//
-//			if (pMsg->hdr.status == bleProcedureComplete) {
-//				discState = BLE_DISC_STATE_IDLE;
-//			}
-//		}
-//
-////		// Characteristic found, store handle
-////		if ((pMsg->method == ATT_READ_BY_TYPE_RSP)
-////				&& (pMsg->msg.readByTypeRsp.numPairs > 0)) {
-////			uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);
-////
-////			// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
-////			SIMPLECENTRAL_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-////
-////			// Store the handle of the simpleprofile characteristic value
-////			connList[connIndex].charHandle = BUILD_UINT16(
-////					pMsg->msg.readByTypeRsp.pDataList[3],
-////					pMsg->msg.readByTypeRsp.pDataList[4]);
-////
-////			Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "Simple Svc Found");
-////
-////			// Now we can use GATT Read/Write
-////			tbm_setItemStatus(&scMenuPerConn,
-////			SC_ITEM_GATTREAD | SC_ITEM_GATTWRITE, SC_ITEM_NONE);
-////		}
-////		discState = BLE_DISC_STATE_IDLE;
-//
-//	}
-//
-//}
 #if (DEFAULT_DEV_DISC_BY_SVC_UUID == TRUE)
 /*********************************************************************
  * @fn      SimpleCentral_findSvcUuid
