@@ -32,7 +32,9 @@ const GPIO4       = GPIO.addInstance();
 const GPIO5       = GPIO.addInstance();
 const GPIO6       = GPIO.addInstance();
 const GPIO7       = GPIO.addInstance();
-const GPIO12      = GPIO.addInstance();
+const GPIO8       = GPIO.addInstance();
+const GPIO13      = GPIO.addInstance();
+const GPIO14      = GPIO.addInstance();
 const NVS         = scripting.addModule("/ti/drivers/NVS");
 const NVS1        = NVS.addInstance();
 const NVS2        = NVS.addInstance();
@@ -132,11 +134,20 @@ GPIO7.initialOutputState = "High";
 GPIO7.gpioPin.$assign    = "boosterpack.19";
 GPIO7.pinInstance.$name  = "CONFIG_PIN_13";
 
-GPIO12.$name             = "GPIO_DEBUG";
-GPIO12.mode              = "Output";
-GPIO12.outputStrength    = "Low";
-GPIO12.gpioPin.$assign   = "boosterpack.18";
-GPIO12.pinInstance.$name = "CONFIG_PIN_17";
+GPIO8.$name             = "GPIO_DEBUG";
+GPIO8.mode              = "Output";
+GPIO8.outputStrength    = "Low";
+GPIO8.gpioPin.$assign   = "boosterpack.18";
+GPIO8.pinInstance.$name = "CONFIG_PIN_17";
+
+GPIO13.$name             = "GPIO_STIM_SHADOW";
+GPIO13.mode              = "Output";
+GPIO13.pinInstance.$name = "CONFIG_PIN_18";
+
+GPIO14.$name             = "GPIO_SHAM_SHADOW";
+GPIO14.mode              = "Output";
+GPIO14.gpioPin.$assign   = "boosterpack.28";
+GPIO14.pinInstance.$name = "CONFIG_PIN_19";
 
 NVS1.$name                    = "CONFIG_NVSINTERNAL";
 NVS1.internalFlash.$name      = "ti_drivers_nvs_NVSCC26XX0";
@@ -187,6 +198,7 @@ GPIO1.gpioPin.$suggestSolution              = "boosterpack.13";
 GPIO2.gpioPin.$suggestSolution              = "boosterpack.12";
 GPIO3.gpioPin.$suggestSolution              = "boosterpack.39";
 GPIO4.gpioPin.$suggestSolution              = "boosterpack.40";
+GPIO13.gpioPin.$suggestSolution             = "boosterpack.29";
 SD1.slaveSelect.gpioPin.$suggestSolution    = "boosterpack.8";
 SPI1.spi.$suggestSolution                   = "SSI0";
 SPI1.spi.sclkPin.$suggestSolution           = "boosterpack.7";

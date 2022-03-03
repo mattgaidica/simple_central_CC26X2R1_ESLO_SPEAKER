@@ -73,7 +73,7 @@
  */
 #define TARGET_PHASE			0
 #define TRIAL_VAR_LEN			7
-#define SHAM_EVERYISH			5 // NULL for never, based on: uint8_t shamCond = (rand() % SHAM_EVERYISH) == 0;
+#define SHAM_EVERYISH			10 // NULL for never, based on: uint8_t shamCond = (rand() % SHAM_EVERYISH) == 0;
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	200 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
@@ -101,6 +101,7 @@
 #define ES_RESET_EXPERIMENT		   0x10
 #define ES_DO_AUTOCONNECT		   0x11
 #define ES_ENABLE_INDICATIONS	   0x12
+#define ES_SAVE_SD				   0x13
 
 // Simple Central Task Events
 #define SC_ICALL_EVT                         ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -122,7 +123,7 @@
 #define SC_TASK_PRIORITY                     1
 
 #ifndef SC_TASK_STACK_SIZE
-#define SC_TASK_STACK_SIZE                   1024
+#define SC_TASK_STACK_SIZE                   2048
 #endif
 
 // Size of string-converted device address ("0xXXXXXXXXXXXX")
@@ -404,6 +405,7 @@ static Clock_Struct clkSwaActions;
 static Clock_Struct stimTimeout;
 static Clock_Struct dataTimeout;
 static Clock_Struct indicationClk;
+static Clock_Struct saveClk;
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -469,7 +471,6 @@ void speakerFilename(char *nameBuf, uint32_t iName);
 void initLEDs();
 uint8_t setSham();
 
-
 #include <ti/sysbios/family/arm/m3/Hwi.h>
 volatile uintptr_t *excPC = 0;
 volatile uintptr_t *excCaller = 0;
@@ -480,7 +481,6 @@ void execHandlerHook(Hwi_ExcContext *ctx) {
 	while (2)
 		;
 }
-
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -503,6 +503,54 @@ static gapBondCBs_t bondMgrCBs = { SimpleCentral_passcodeCb, // Passcode callbac
 //static void WatchdogCallbackFxn(Watchdog_Handle handle) {
 //	SysCtrlSystemReset();
 //}
+static void saveToSD() {
+	// write SWA buffer, dominantFreq, and phaseAngle to memory
+	FILE *dst;
+	/* Variables to keep track of the file copy progress */
+	uint8_t success = 0x00;
+
+//	success = 1;
+	Display_close(dispHandle);
+	sdfatfsHandle = SDFatFS_open(CONFIG_SD_0,
+	DRIVE_NUM);
+	if (sdfatfsHandle) {
+		GPIO_write(LED_RED, 0x00);
+		speakerFilename(saveFile, SWATrial);
+		dst = fopen(saveFile, "w");
+		if (dst) {
+			unsigned int numel = fwrite(swaBuffer, sizeof(int32_t), SWA_LEN * 2,
+					dst);
+
+			int32_t trialVars[TRIAL_VAR_LEN] = { (int32_t) doSham, dominantFreq,
+					phaseAngle, SWATrial, absoluteTime, msToStim,
+					targetPhaseAngle };
+			numel += fwrite(trialVars, sizeof(uint32_t),
+			TRIAL_VAR_LEN, dst);
+			if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
+				success = 0x01;
+				GPIO_write(LED_RED, 0x01);
+			}
+			fflush(dst);
+			fclose(dst);
+		}
+		SDFatFS_close(sdfatfsHandle);
+	}
+
+	dispHandle = Display_open(Display_Type_LCD, NULL);
+	if (success) {
+		Display_printf(dispHandle, 0, 0, "SD saved %05d", SWATrial);
+		SWATrial++;
+		// display file that would be writing
+		buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
+		NLED, SWATrial);
+		sendBytes(RGBW, LED_BUF_LEN);
+	} else {
+		Display_printf(dispHandle, 0, 0, "Error with SD Card.");
+	}
+	doSham = setSham(); // for next trial
+	isBusy = 0x00;
+	SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
+}
 
 uint8_t setSham() {
 	uint8_t shamCond;
@@ -860,6 +908,9 @@ static void SimpleCentral_init(void) {
 
 	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
 	false, ES_ENABLE_INDICATIONS);
+
+	Util_constructClock(&saveClk, SimpleCentral_clockHandler, 300, 0,
+		false, ES_SAVE_SD);
 }
 
 /*********************************************************************
@@ -1278,7 +1329,7 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 
 		// We might be in the middle of scanning, try stopping it.
 //		GapScan_disable("");
-		SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
+//		SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
 		break;
 	}
 
@@ -1297,6 +1348,11 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 
 	case ES_ENABLE_INDICATIONS: {
 		SimpleCentral_enableIndications(0);
+		break;
+	}
+
+	case ES_SAVE_SD: {
+		saveToSD();
 		break;
 	}
 
@@ -1580,7 +1636,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 
 		Util_stopClock(&dataTimeout); // cancel clock
-		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
+//		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 
 		break;
 	}
@@ -1735,6 +1791,7 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			GPIO_write(GPIO_DEBUG, 0x01);
 			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
 				isBusy = 0x01;
+				ATT_HandleValueCfm(pMsg->connHandle); // ack
 
 				// if we get here, this routine should not be interrupted by a nearby timeout
 				Util_rescheduleClock(&dataTimeout, DATA_TIMEOUT_PERIOD); // delay clock
@@ -1749,9 +1806,9 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 						sizeof(int32_t));
 
 				// this will make the bit pattern present at least for a second for first trials
-				buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
-				NLED, SWATrial);
-				sendBytes(RGBW, LED_BUF_LEN);
+//				buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
+//				NLED, SWATrial);
+//				sendBytes(RGBW, LED_BUF_LEN);
 
 				targetPhaseAngle = TARGET_PHASE * 1000; // 0 <= target < 360
 				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
@@ -1772,17 +1829,16 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 				if (doSham == 0x00) {
 					GPIO_write(GPIO_STIM, 0x01); // STIMULATE
+					GPIO_write(GPIO_STIM_SHADOW, 0x01); // STIMULATE
+				} else {
+					GPIO_write(GPIO_SHAM_SHADOW, 0x01); // STIMULATE
 				}
 				GPIO_write(LED_GREEN, 0x01); // STIMULATE indicator
 				iNotifData = 0; // stim always precedes storing data
 				Util_startClock(&stimTimeout); // turn off here
-				ATT_HandleValueCfm(pMsg->connHandle); // ack
+				memset(swaBuffer, 0x00, sizeof(uint32_t) * SWA_LEN * 2);
 			} else {
 				GPIO_write(LED_GREEN, 0x01);
-				// eslo sending data, store on board
-				if (iNotifData == 0) {
-					memset(swaBuffer, 0x00, sizeof(uint32_t) * SWA_LEN * 2);
-				}
 				for (uint8_t i = 0; i < pMsg->msg.handleValueInd.len; i += 4) {
 					memcpy(&swaBuffer[iNotifData],
 							pMsg->msg.handleValueInd.pValue + i,
@@ -1793,57 +1849,9 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 
 				// save SD is blocking on SD card, so it disconnects from peripheral until done
 				if (iNotifData == SWA_LEN * 2) {
-					// write SWA buffer, dominantFreq, and phaseAngle to memory
-					FILE *dst;
-					/* Variables to keep track of the file copy progress */
-					uint8_t success = 0x00;
-
-					Display_close(dispHandle);
-					sdfatfsHandle = SDFatFS_open(CONFIG_SD_0,
-					DRIVE_NUM);
-					if (sdfatfsHandle) {
-						GPIO_write(LED_RED, 0x00);
-						speakerFilename(saveFile, SWATrial);
-						dst = fopen(saveFile, "w");
-						if (dst) {
-							unsigned int numel = fwrite(swaBuffer,
-									sizeof(int32_t), SWA_LEN * 2, dst);
-
-							int32_t trialVars[TRIAL_VAR_LEN] = {
-									(int32_t) doSham, dominantFreq, phaseAngle,
-									SWATrial, absoluteTime, msToStim,
-									targetPhaseAngle };
-							numel += fwrite(trialVars, sizeof(uint32_t),
-							TRIAL_VAR_LEN, dst);
-							if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
-								success = 0x01;
-								GPIO_write(LED_RED, 0x01);
-							}
-							fflush(dst);
-							fclose(dst);
-						}
-						SDFatFS_close(sdfatfsHandle);
-					}
-
-					dispHandle = Display_open(Display_Type_LCD, NULL);
-					if (success) {
-						Display_printf(dispHandle, 0, 0, "SD saved %05d",
-								SWATrial);
-						SWATrial++;
-						// display file that would be writing
-						buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
-						NLED, SWATrial);
-						sendBytes(RGBW, LED_BUF_LEN);
-					} else {
-						Display_printf(dispHandle, 0, 0, "Error with SD Card.");
-					}
-					doSham = setSham(); // for next trial
-					isBusy = 0x00;
-
-					// try disconnecting at end, doDisconnect kicks off a lot of stuff that might interfere
-//					scConnHandle = connList[0].connHandle;
-//					SimpleCentral_doDisconnect(0);
-//					iNotifData = 0;
+					iNotifData = 0; // do not come back here
+					Util_startClock(&saveClk);
+					Util_stopClock(&dataTimeout); // saveSD will handle reset experiment
 				}
 				GPIO_write(GPIO_DEBUG, 0x00);
 				GPIO_write(LED_GREEN, 0x00);
@@ -2399,6 +2407,8 @@ void SimpleCentral_clockHandler(UArg arg) {
 	case ES_STIM_TIMEOUT:
 		GPIO_write(LED_GREEN, 0x00);
 		GPIO_write(GPIO_STIM, 0x00);
+		GPIO_write(GPIO_STIM_SHADOW, 0x00);
+		GPIO_write(GPIO_SHAM_SHADOW, 0x00);
 		break;
 
 	case ES_DATA_TIMEOUT:
@@ -2433,6 +2443,10 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	case ES_ENABLE_INDICATIONS:
 		SimpleCentral_enqueueMsg(ES_ENABLE_INDICATIONS, 0, NULL);
+		break;
+
+	case ES_SAVE_SD:
+		SimpleCentral_enqueueMsg(ES_SAVE_SD, 0, NULL);
 		break;
 
 	default:

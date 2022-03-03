@@ -203,8 +203,6 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
 
   Display_print0(dispHandle, 0, 0, ">>>STACK ASSERT");
 
-  SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
-
   // check the assert cause
   switch (assertCause)
   {
