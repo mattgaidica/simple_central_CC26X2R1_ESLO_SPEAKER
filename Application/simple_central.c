@@ -75,7 +75,7 @@
 #define TRIAL_VAR_LEN			7
 #define SHAM_EVERYISH			10 // NULL for never, based on: uint8_t shamCond = (rand() % SHAM_EVERYISH) == 0;
 #define STIM_TIMEOUT_PERIOD		50 // ms
-#define SWA_MODE_LOOP_PERIOD	200 // ms
+#define SWA_MODE_LOOP_PERIOD	1000 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
 
 #define NLED 			10 // counts up to 2^10=1024 trials
@@ -910,7 +910,7 @@ static void SimpleCentral_init(void) {
 	false, ES_ENABLE_INDICATIONS);
 
 	Util_constructClock(&saveClk, SimpleCentral_clockHandler, 300, 0,
-		false, ES_SAVE_SD);
+	false, ES_SAVE_SD);
 }
 
 /*********************************************************************
@@ -1820,11 +1820,12 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				msToStim = (1000 * remainingPhase / (360 * dominantFreq));
 				// correct for timing: BLE and center stim on target phase
 				msToStim = msToStim - BLE_LATENCY - (STIM_TIMEOUT_PERIOD / 2);
-				if (msToStim < 0) {
-					msToStim = msToStim + (360 / dominantFreq); // add entire cycle
+				// add entire cycle, while loop covers higher freqs for future
+				while (msToStim < 0) {
+					msToStim = msToStim + (1000000 / dominantFreq);
 				}
-				if (msToStim < 0 || msToStim > 2000) { // greater than 0.5Hz cycle
-					return; // invalid, return to pretend STIM was never indicated
+				if (msToStim < 0 || msToStim > 4000) {
+					msToStim = 0; // safeguard, ensure clock runs out
 				}
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
 				if (doSham == 0x00) {
