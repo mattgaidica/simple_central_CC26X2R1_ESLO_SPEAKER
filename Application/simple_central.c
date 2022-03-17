@@ -71,19 +71,21 @@
 /*********************************************************************
  * CONSTANTS
  */
-#define TARGET_PHASE			0
+#define TARGET_PHASE			0 // degrees
 #define TRIAL_VAR_LEN			7
 #define SHAM_EVERYISH			10 // NULL for never, based on: uint8_t shamCond = (rand() % SHAM_EVERYISH) == 0;
 #define STIM_TIMEOUT_PERIOD		50 // ms
 #define SWA_MODE_LOOP_PERIOD	1000 // ms
 #define SWA_MODE_ACTION_PERIOD	5000 // ms
+#define SAVE_SD_PERIOD			4000
+#define INDICATION_TIMEOUT		100
 
 #define NLED 			10 // counts up to 2^10=1024 trials
 #define LED_BUF_LEN 	32 * NLED
 #define R_LED_INT 		0x80
 
 // Application events
-#define SC_EVT_KEY_CHANGE          0x01
+#define SC_EVT_KEY_CHANGE          1
 #define SC_EVT_SCAN_ENABLED        0x02
 #define SC_EVT_SCAN_DISABLED       0x03
 #define SC_EVT_ADV_REPORT          0x04
@@ -149,10 +151,10 @@
 #define GROUP_NAME_LENGTH                    6
 
 //Member defalult status when initalized
-#define GROUP_MEMBER_INITIALIZED             0x00
+#define GROUP_MEMBER_INITIALIZED             0
 
 //Member connected
-#define GROUP_MEMBER_CONNECTED               0x01
+#define GROUP_MEMBER_CONNECTED               1
 
 //Default connection handle which is set when group member is created
 #define GROUP_INITIALIZED_CONNECTION_HANDLE  0xFFFF
@@ -381,21 +383,23 @@ static groupListElem_t *memberInProg;
 char fatfsPrefix[] = "fat";
 SDFatFS_Handle sdfatfsHandle;
 
-uint16_t iNotifData = 0;
+uint16_t iIndication = 0;
 int32_t swaBuffer[SWA_LEN * 2] = { 0 };
 int32_t dominantFreq, phaseAngle, msToStim, targetPhaseAngle; // float values * 1000 on peripheral (i.e. mHz)
 uint32_t SWATrial = 0;
 uint32_t absoluteTime;
-uint8_t sd_online = 0x00;
-uint8_t expState = 0x01; // start on
-uint8_t isBusy = 0x00;
-uint8_t paramsSynced = 0x00; // deprecated, not in use
+uint8_t sd_online = 0;
+uint8_t expState = 1; // start on
+uint8_t isBusy = 0;
+uint8_t paramsSynced = 0; // deprecated, not in use
 
 SPI_Handle LED_SPI;
 uint8_t RGBW[LED_BUF_LEN]; // 8 bytes for R,G,B,W
 char saveFile[15] = "";
 
-uint8_t doSham = 0x00;
+uint8_t doSham = 0;
+uint32_t loop1 = 0; // !!debug only
+uint32_t loop2 = 0; // !!debug only
 
 Watchdog_Params watchdogParams;
 Watchdog_Handle watchdogHandle;
@@ -507,14 +511,14 @@ static void saveToSD() {
 	// write SWA buffer, dominantFreq, and phaseAngle to memory
 	FILE *dst;
 	/* Variables to keep track of the file copy progress */
-	uint8_t success = 0x00;
+	uint8_t success = 0;
 
-//	success = 1;
+	GPIO_write(LED_GREEN, 1);
 	Display_close(dispHandle);
 	sdfatfsHandle = SDFatFS_open(CONFIG_SD_0,
 	DRIVE_NUM);
 	if (sdfatfsHandle) {
-		GPIO_write(LED_RED, 0x00);
+		GPIO_write(LED_RED, 0);
 		speakerFilename(saveFile, SWATrial);
 		dst = fopen(saveFile, "w");
 		if (dst) {
@@ -527,8 +531,8 @@ static void saveToSD() {
 			numel += fwrite(trialVars, sizeof(uint32_t),
 			TRIAL_VAR_LEN, dst);
 			if (numel == SWA_LEN * 2 + TRIAL_VAR_LEN) {
-				success = 0x01;
-				GPIO_write(LED_RED, 0x01);
+				success = 1;
+				GPIO_write(LED_RED, 1);
 			}
 			fflush(dst);
 			fclose(dst);
@@ -548,14 +552,13 @@ static void saveToSD() {
 		Display_printf(dispHandle, 0, 0, "Error with SD Card.");
 	}
 	doSham = setSham(); // for next trial
-	isBusy = 0x00;
 	SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 }
 
 uint8_t setSham() {
 	uint8_t shamCond;
 	if (SHAM_EVERYISH == NULL) {
-		shamCond = 0x00;
+		shamCond = 0;
 	} else {
 		shamCond = (rand() % SHAM_EVERYISH) == 0;
 	}
@@ -611,10 +614,12 @@ void resetExperiment() {
 		scConnHandle = connList[0].connHandle;
 		SimpleCentral_doDisconnect(0);
 	}
-	isBusy = 0x00;
-	iNotifData = 0;
-	paramsSynced = 0x00;
-	GPIO_write(LED_GREEN, 0x00);
+	isBusy = 0;
+	iIndication = 0;
+	paramsSynced = 0;
+	GPIO_write(LED_GREEN, 0);
+	loop1 = 0;
+	loop2 = 0;
 //	Watchdog_clear(watchdogHandle);
 }
 
@@ -854,7 +859,7 @@ static void SimpleCentral_init(void) {
 			char initString[6] = "ONLINE";
 			unsigned int numel = fwrite(initString, 1, 6, wdst);
 			if (numel == 6) {
-				sd_online = 0x01;
+				sd_online = 1;
 			}
 			fflush(wdst);
 			fclose(wdst);
@@ -871,7 +876,7 @@ static void SimpleCentral_init(void) {
 
 	dispHandle = Display_open(Display_Type_LCD, NULL); //Display_Type_ANY, NULL);
 
-	if (sd_online == 0x00) {
+	if (sd_online == 0) {
 		while (1) {
 			Display_printf(dispHandle, 0, 0, "Reset SD card.");
 			Task_sleep(100000);
@@ -906,10 +911,11 @@ static void SimpleCentral_init(void) {
 	Util_constructClock(&clkSwaActions, SimpleCentral_clockHandler,
 	SWA_MODE_ACTION_PERIOD, SWA_MODE_ACTION_PERIOD, true, ES_MODE_ACTIONS);
 
-	Util_constructClock(&indicationClk, SimpleCentral_clockHandler, 100, 0,
+	Util_constructClock(&indicationClk, SimpleCentral_clockHandler,
+	INDICATION_TIMEOUT, 0,
 	false, ES_ENABLE_INDICATIONS);
 
-	Util_constructClock(&saveClk, SimpleCentral_clockHandler, 300, 0,
+	Util_constructClock(&saveClk, SimpleCentral_clockHandler, SAVE_SD_PERIOD, 0,
 	false, ES_SAVE_SD);
 }
 
@@ -1636,8 +1642,6 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		}
 
 		Util_stopClock(&dataTimeout); // cancel clock
-//		SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
-
 		break;
 	}
 
@@ -1680,7 +1684,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		if (linkDB_GetInfo(pPkt->connectionHandle, &linkInfo) == SUCCESS) {
 			if (pPkt->status == SUCCESS) {
 				// params from peripheral updated
-				paramsSynced = 0x01;
+				paramsSynced = 1;
 				Display_printf(dispHandle, SC_ROW_CUR_CONN, 0, "*P: %s",
 						Util_convertBdAddr2Str(linkInfo.addr));
 			} else {
@@ -1788,10 +1792,10 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 			tbm_goTo(&scMenuPerConn);
 		} else if (pMsg->method == ATT_HANDLE_VALUE_IND) {
 			// Matt: tricks to remove the need for floats here
-			GPIO_write(GPIO_DEBUG, 0x01);
+			GPIO_write(GPIO_DEBUG, 1);
+			ATT_HandleValueCfm(pMsg->connHandle); // ack right away
 			if (pMsg->msg.handleValueInd.pValue[3] == 0x62) { // test for time
-				isBusy = 0x01;
-				ATT_HandleValueCfm(pMsg->connHandle); // ack
+				isBusy = 1;
 
 				// if we get here, this routine should not be interrupted by a nearby timeout
 				Util_rescheduleClock(&dataTimeout, DATA_TIMEOUT_PERIOD); // delay clock
@@ -1805,11 +1809,6 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				memcpy(&SWATrial, pMsg->msg.handleValueInd.pValue + 12,
 						sizeof(int32_t));
 
-				// this will make the bit pattern present at least for a second for first trials
-//				buildLedBitPattern(R_LED_INT, 0, 0, 0, RGBW,
-//				NLED, SWATrial);
-//				sendBytes(RGBW, LED_BUF_LEN);
-
 				targetPhaseAngle = TARGET_PHASE * 1000; // 0 <= target < 360
 				int32_t remainingPhase = phaseAngle - targetPhaseAngle;
 				if (remainingPhase < 0) {
@@ -1819,7 +1818,8 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 				}
 				msToStim = (1000 * remainingPhase / (360 * dominantFreq));
 				// correct for timing: BLE and center stim on target phase
-				msToStim = msToStim - BLE_LATENCY - (STIM_TIMEOUT_PERIOD / 2);
+				msToStim = msToStim - (INIT_PHYPARAM_MIN_CONN_INT * 1.25)
+						- (STIM_TIMEOUT_PERIOD / 2);
 				// add entire cycle, while loop covers higher freqs for future
 				while (msToStim < 0) {
 					msToStim = msToStim + (1000000 / dominantFreq);
@@ -1828,34 +1828,37 @@ static void SimpleCentral_processGATTMsg(gattMsgEvent_t *pMsg) {
 					msToStim = 0; // safeguard, ensure clock runs out
 				}
 				Task_sleep((msToStim * 1000) / Clock_tickPeriod); // convert to uS inline
-				if (doSham == 0x00) {
-					GPIO_write(GPIO_STIM, 0x01); // STIMULATE
-					GPIO_write(GPIO_STIM_SHADOW, 0x01); // STIMULATE
+				if (doSham == 0) {
+					GPIO_write(GPIO_STIM, 1); // STIMULATE
+					GPIO_write(GPIO_STIM_SHADOW, 1); // STIMULATE
 				} else {
-					GPIO_write(GPIO_SHAM_SHADOW, 0x01); // STIMULATE
+					GPIO_write(GPIO_SHAM_SHADOW, 1); // STIMULATE
 				}
-				GPIO_write(LED_GREEN, 0x01); // STIMULATE indicator
-				iNotifData = 0; // stim always precedes storing data
+				GPIO_write(LED_GREEN, 1); // STIMULATE indicator
+				iIndication = 0; // stim always precedes storing data
 				Util_startClock(&stimTimeout); // turn off here
-				memset(swaBuffer, 0x00, sizeof(uint32_t) * SWA_LEN * 2);
+				Util_restartClock(&saveClk, SAVE_SD_PERIOD); // long
+				memset(swaBuffer, 0, sizeof(uint32_t) * SWA_LEN * 2);
+				loop1++;
 			} else {
-				GPIO_write(LED_GREEN, 0x01);
-				for (uint8_t i = 0; i < pMsg->msg.handleValueInd.len; i += 4) {
-					memcpy(&swaBuffer[iNotifData],
-							pMsg->msg.handleValueInd.pValue + i,
-							sizeof(int32_t));
-					iNotifData++;
-				}
-				ATT_HandleValueCfm(pMsg->connHandle); // ack
+				if (isBusy == 1) { // stim data was sent
+					Util_restartClock(&saveClk, SAVE_SD_PERIOD / 10); // short
+					GPIO_toggle(LED_GREEN);
+					for (uint8_t i = 0; i < pMsg->msg.handleValueInd.len; i +=
+							4) {
+						memcpy(&swaBuffer[iIndication],
+								pMsg->msg.handleValueInd.pValue + i,
+								sizeof(int32_t));
+						iIndication++;
+					}
 
-				// save SD is blocking on SD card, so it disconnects from peripheral until done
-				if (iNotifData == SWA_LEN * 2) {
-					iNotifData = 0; // do not come back here
-					Util_startClock(&saveClk);
-					Util_stopClock(&dataTimeout); // saveSD will handle reset experiment
+					// if entered, the whole sequence was sent and should trigger saveSD by saveClk
+					if (iIndication == SWA_LEN * 2) {
+						iIndication = 0; // reset to ensure no overflow
+					}
+					GPIO_write(GPIO_DEBUG, 0);
+					loop2++;
 				}
-				GPIO_write(GPIO_DEBUG, 0x00);
-				GPIO_write(LED_GREEN, 0x00);
 			}
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
 			// ATT request-response or indication-confirmation flow control is
@@ -2406,10 +2409,10 @@ void SimpleCentral_clockHandler(UArg arg) {
 		break;
 
 	case ES_STIM_TIMEOUT:
-		GPIO_write(LED_GREEN, 0x00);
-		GPIO_write(GPIO_STIM, 0x00);
-		GPIO_write(GPIO_STIM_SHADOW, 0x00);
-		GPIO_write(GPIO_SHAM_SHADOW, 0x00);
+		GPIO_write(LED_GREEN, 0);
+		GPIO_write(GPIO_STIM, 0);
+		GPIO_write(GPIO_STIM_SHADOW, 0);
+		GPIO_write(GPIO_SHAM_SHADOW, 0);
 		break;
 
 	case ES_DATA_TIMEOUT:
@@ -2418,26 +2421,26 @@ void SimpleCentral_clockHandler(UArg arg) {
 
 	case ES_MODE_LOOP:
 		// START EXPERIMENT
-		if (GPIO_read(SWA_SWITCH) == 0x01 && GPIO_read(SWA_LIGHT) == 0x00) {
+		if (GPIO_read(SWA_SWITCH) == 1 && GPIO_read(SWA_LIGHT) == 0) {
 //			Util_startClock(&expTimeout);
-			expState = 0x01; // force experiment OFF
+			expState = 1; // force experiment OFF
 		}
 		// STOP EXPERIMENT
-		if (GPIO_read(SWA_SWITCH) == 0x00 && GPIO_read(SWA_LIGHT) == 0x01) {
+		if (GPIO_read(SWA_SWITCH) == 0 && GPIO_read(SWA_LIGHT) == 1) {
 //			Util_stopClock(&expTimeout);
-			expState = 0x00; // force experiment OFF
+			expState = 0; // force experiment OFF
 		}
 		GPIO_write(SWA_LIGHT, GPIO_read(SWA_SWITCH));
 		GPIO_write(LED_RED, expState);
 		break;
 
 	case ES_MODE_ACTIONS:
-		if (expState == 0x01 && numConn == 0x00 && isBusy == 0x00) {
+		if (expState == 1 && numConn == 0 && isBusy == 0) {
 			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL); // START EXPERIMENT
 		}
 		// likely that state recently changed, but need to make sure that
 		// SWA is allowed to finish writing if in progress
-		if (expState == 0x00 && numConn == 0x00 && isBusy == 0x00) {
+		if (expState == 0 && numConn == 0 && isBusy == 0) {
 			SimpleCentral_enqueueMsg(ES_RESET_EXPERIMENT, 0, NULL);
 		}
 		break;
@@ -2794,7 +2797,7 @@ bool SimpleCentral_enableIndications(uint8_t index) {
 	attWriteReq_t req;
 	bStatus_t retVal = FAILURE;
 	// GATT_CLIENT_CFG_INDICATE
-	uint8 configData[2] = { 0x02, 0x00 }; // 00: none, 01: notif, 02: ind, 03: both
+	uint8 configData[2] = { 0x02, 0 }; // 00: none, 01: notif, 02: ind, 03: both
 	req.pValue = GATT_bm_alloc(scConnHandle, ATT_WRITE_REQ, 2, NULL);
 
 	uint8_t connIndex = SimpleCentral_getConnIndex(scConnHandle);
@@ -2827,7 +2830,7 @@ bool SimpleCentral_enableIndications(uint8_t index) {
  */
 bool SimpleCentral_doGattWrite(uint8_t index) {
 	status_t status;
-	uint8_t charVals[4] = { 0x00, 0x01 }; // Should be consistent with
+	uint8_t charVals[4] = { 0, 1 }; // Should be consistent with
 // those in scMenuGattWrite
 
 	attWriteReq_t req;

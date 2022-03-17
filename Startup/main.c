@@ -192,7 +192,7 @@ int main() {
  * @return      None.
  */
 void AssertHandler(uint8 assertCause, uint8 assertSubcause) {
-	SysCtrlSystemReset(); // Matt
+//	SysCtrlSystemReset(); // Matt
 	// Open the display if the app has not already done so
 	if (!dispHandle) {
 		dispHandle = Display_open(Display_Type_ANY, NULL);
