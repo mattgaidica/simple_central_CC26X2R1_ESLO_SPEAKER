@@ -60,9 +60,9 @@ ble.bondPairing                        = "GAPBOND_PAIRING_MODE_INITIATE";
 ble.maxConnNum                         = 1;
 ble.deviceName                         = "ESLO_BASE";
 ble.addressMode                        = "ADDRMODE_RANDOM";
-ble.randomAddress                      = "E0:E0:E0:E0:E0:E0";
 ble.connIntMin                         = 10;
 ble.connIntMax                         = 10;
+ble.randomAddress                      = "E0:E0:E0:E0:E0:E0";
 ble.radioConfig.codeExportConfig.$name = "ti_devices_radioconfig_code_export_param0";
 ble.connUpdateParamsCentral.$name      = "ti_ble5stack_general_ble_conn_update_params0";
 
@@ -181,7 +181,7 @@ SPI2.mosiPinInstance.$name = "CONFIG_PIN_16";
 TRNG1.$name = "CONFIG_TRNG_0";
 
 Watchdog1.$name  = "CONFIG_WATCHDOG_0";
-Watchdog1.period = 120000;
+Watchdog1.period = 15000;
 
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future

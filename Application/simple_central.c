@@ -620,7 +620,6 @@ void resetExperiment() {
 	GPIO_write(LED_GREEN, 0);
 	loop1 = 0;
 	loop2 = 0;
-//	Watchdog_clear(watchdogHandle);
 }
 
 /*
@@ -883,11 +882,12 @@ static void SimpleCentral_init(void) {
 		}
 	}
 	GPIO_write(SWA_LIGHT, expState); // on at start
-//	Watchdog_init();
-//	Watchdog_Params_init(&watchdogParams);
-//	watchdogParams.resetMode = Watchdog_RESET_ON;
+	Watchdog_init();
+	Watchdog_Params_init(&watchdogParams);
+	watchdogParams.resetMode = Watchdog_RESET_ON;
+	watchdogParams.callbackFxn = NULL;
 //	watchdogParams.callbackFxn = (Watchdog_Callback) WatchdogCallbackFxn; // or NULL
-//	watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &watchdogParams);
+	watchdogHandle = Watchdog_open(CONFIG_WATCHDOG_0, &watchdogParams);
 //	if (watchdogHandle == NULL) {
 //	}
 
@@ -2435,6 +2435,7 @@ void SimpleCentral_clockHandler(UArg arg) {
 		break;
 
 	case ES_MODE_ACTIONS:
+		Watchdog_clear(watchdogHandle);
 		if (expState == 1 && numConn == 0 && isBusy == 0) {
 			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL); // START EXPERIMENT
 		}
@@ -2484,7 +2485,7 @@ static status_t SimpleCentral_enqueueMsg(uint8_t event, uint8_t state,
 		success = Util_enqueueMsg(appMsgQueue, syncEvent, (uint8_t*) pMsg);
 		return (success) ? SUCCESS : FAILURE;
 	}
-
+//	SysCtrlSystemReset(); // Matt, if pMsg is NULL -> reset
 	return (bleMemAllocError);
 }
 
