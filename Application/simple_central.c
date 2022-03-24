@@ -1334,8 +1334,8 @@ static void SimpleCentral_processAppMsg(scEvt_t *pMsg) {
 		Display_printf(dispHandle, SC_ROW_ANY_CONN, 0, "Insufficient Memory");
 
 		// We might be in the middle of scanning, try stopping it.
-//		GapScan_disable("");
-//		SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
+		GapScan_disable("");
+		SysCtrlSystemReset(); // Matt: not sure how it gets here, force restart
 		break;
 	}
 
@@ -1564,7 +1564,7 @@ static void SimpleCentral_processGapMsg(gapEventHdr_t *pMsg) {
 		if ((autoConnect) && (pairMode != GAPBOND_PAIRING_MODE_INITIATE)) {
 			SimpleCentral_autoConnect();
 		}
-
+		Watchdog_clear(watchdogHandle);
 		SimpleCentral_doSelectConn(connIndex); // ESLO Speaker -Matt
 		SimpleCentral_startSvcDiscovery(); // fills cccd for indication stream
 		break;
@@ -2435,7 +2435,6 @@ void SimpleCentral_clockHandler(UArg arg) {
 		break;
 
 	case ES_MODE_ACTIONS:
-		Watchdog_clear(watchdogHandle);
 		if (expState == 1 && numConn == 0 && isBusy == 0) {
 			SimpleCentral_enqueueMsg(ES_DO_AUTOCONNECT, 0, NULL); // START EXPERIMENT
 		}
